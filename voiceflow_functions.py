@@ -1,11 +1,13 @@
 def handle_response(response) -> dict:
   response = response.json()
+  if isinstance(response, dict) and response['name'] and response['name'] == 'verror':
+    print(f'---------ERROR: {response}---------')
+    
   respond_text = response
   final_text = ""
   final_json = {}
   buttons = None
   for i, response in enumerate(respond_text):
-    print(response['type'])
     if response['type'] == 'choice':
       final_json[f'block-{i}'] = {'buttons': handle_buttons(response)}
       final_json[f'block-{i}']['type'] = response['type']

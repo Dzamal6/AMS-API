@@ -13,3 +13,4 @@ def start_conversation():
   thread = client.beta.threads.create()
   print(f"New thread created with ID: {thread.id}")
   return jsonify({"thread_id": thread.id})
+

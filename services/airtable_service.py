@@ -3,7 +3,8 @@ from pyairtable import Api
 from pyairtable.formulas import match
 import uuid
 from flask import jsonify
-from functions import encrypted_str
+from functions import check_admin, hash_password
+from functions import get_user_info
 
 api = Api(os.environ['AIRTABLE_API_KEY'])
 user_table = api.table('appS1lC4Fzpmre5cF', 'tblTQJkH9Q6X77egQ')
@@ -138,6 +139,13 @@ def get_all_users():
   return users
 
 
+def get_user(username):
+  formula = match({'Username': username})
+  result = user_table.first(formula=formula)
+  if result:
+    return {'id': result['id'], 'fields': result['fields']}
+
+
 def add_assistant(project_token, project_name, project_vID, project_id):
   formula = match({'name': project_name})
   result = assistants_table.first(formula=formula)
@@ -160,7 +168,8 @@ def add_assistant(project_token, project_name, project_vID, project_id):
     })
     print(f'Assistant {project_name} added')
     res = assistants_table.first(formula=formula)
-    if res: return res['id']
+    if res:
+      return res['id']
     return None
 
 
@@ -185,7 +194,7 @@ def update_user(user_id,
       k: v
       for k, v in [('Username',
                     username), ('Password',
-                                encrypted_str(password)), ('Roles',
+                                password), ('Roles',
                                             roles), ('Assistants', assistants)]
       if v
   }

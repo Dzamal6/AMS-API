@@ -89,3 +89,11 @@ def get_transcript_dialog():
     return jsonify({'message': 'Invalid session.'}), 401
   else:
     return jsonify({'message': 'Transcript retrieval failed.'}), 400
+
+# @transcript_bp.route('/get_user_transcripts', methods=['GET'])
+# def get_user_transcripts(user_id):
+#   all_transcripts = get_transcripts();
+#   user_transcripts = []
+#   if all_transcripts
+
+  

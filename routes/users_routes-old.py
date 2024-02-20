@@ -2,7 +2,7 @@
 from functions import hash_password, roles_required, check_is_current_user, get_user_info, check_password
 from itsdangerous import URLSafeTimedSerializer as Serializer
 from flask import Blueprint, jsonify, make_response, current_app, request
-from services.sql_service import check_user_exists, add_user, remove_user, get_user, get_all_users, get_all_roles, get_user_roles, update_user
+from services.airtable_service import check_user_exists, add_user, remove_user, get_user, get_all_users, get_all_roles, get_user_roles, update_user
 from config import user_session_serializer, limiter
 
 users_bp = Blueprint('users', __name__)
@@ -28,7 +28,6 @@ def create_user_route():
 @roles_required('admin', 'master')
 def delete_user_route():
   data = request.get_json()
-  print(data)
   user_id = data['user_id']
   is_current_user = check_is_current_user(user_id)
   if is_current_user:
@@ -67,18 +66,18 @@ def login_route():
   password = data['password']
   remember = data['remember']
   user = get_user(username)
-  print(f"USER: {user}")
   if not user:
     return jsonify({'message': 'Invalid credentials.'}), 401
-  if check_password(user['password_hash'], password):
+  if check_password(user['fields']['Password'], password):
+    user_roles = get_user_roles(user['fields']['Roles'])
     serializer = user_session_serializer
     user_info = {
         'Username': username,
         'Id': user['id'],
-        'Roles': user['roles'],
-        'Assistants':  user['assistants'],
-        'Created': user['created'],
-        'LastModified': user['last_modified'],
+        'Roles': user_roles,
+        'Assistants':  user['fields']['Assistants'],
+        'Created': user['fields']['Created'],
+        'LastModified': user['fields']['LastModified'],
     }
     session_data = serializer.dumps(user_info)
     print('user session token set.')

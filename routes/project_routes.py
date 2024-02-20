@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify, make_response, current_app
 import requests
-from functions import decrypt_token, encrypt_token, roles_required, check_assistant_permission
-from services.airtable_service import add_assistant, delete_assistant, get_all_assistants
+from functions import decrypt_token, encrypt_token, roles_required, check_assistant_permission, get_user_info, check_user_projects
+from services.sql_service import add_assistant, delete_assistant, get_all_assistants
 from config import AIRTABLE_ENDPOINT, HEADERS, FERNET_KEY, assistant_session_serializer
 
 project_bp = Blueprint('project', __name__)
@@ -64,6 +64,12 @@ def get_projects():
   #   return jsonify({'message': 'Could not obtain records.'}), 400
   # New code
   projects = get_all_assistants()
+  user_session = get_user_info()
+  if not user_session:
+    return jsonify({'message': 'User is not authenticated.'}), 401
+    
+  # projects = check_user_projects(projects, user_session['Assistants'])
+  
   if projects: 
     return jsonify({
         'message': 'Connection was successful.',
@@ -82,21 +88,13 @@ def add_project():
   headers = {'Authorization': f'{token}', 'accept': 'application/json'}
   response = requests.get(endpoint, headers=headers)
   encrypted_token = encrypt_token(FERNET_KEY, token)
+  print(response)
 
   if response.status_code == 200:
     res = add_assistant(encrypted_token,
                         response.json()['project']['name'], version_id,
                         response.json()['project']['_id'])
-    if res:
-      return jsonify({
-          'message': 'Project added to Airtable.',
-          'data': {
-              'name': response.json()['project']['name'],
-              'id': res if not None else 'none',
-          }
-      })
-    else:
-      return jsonify({'message': 'Could not add project.'}), 400
+    return res
   else:
     return jsonify({'message':
                     'No project exists with this information.'}), 400
@@ -108,6 +106,6 @@ def delete_project():
   project_name = request.json.get('project_name')
   res = delete_assistant(project_name)
   if res:
-    return jsonify({'message': 'Project deleted from Airtable.'}), 200
+    return jsonify({'message': 'Project deleted from the database.'}), 200
   else:
     return jsonify({'message': 'Could not delete project.'}), 400

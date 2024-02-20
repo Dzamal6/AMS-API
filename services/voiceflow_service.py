@@ -61,8 +61,9 @@ def post_button(user_id: str, button_id: str) -> dict:
   response = requests.post(url, json=payload, headers=DIALOG_HEADERS)
   return handle_response(response)
 
-def update_variable(user_id: str, payload: dict):
+def update_variable(user_id: str, key: str, value: str):
   url = f"https://general-runtime.voiceflow.com/state/user/{user_id}/variables"
+  payload = {key: value}
   requests.patch(url, json=payload, headers=DIALOG_HEADERS)
   return "Variable succesfully updated"
 
@@ -80,5 +81,6 @@ def create_transcript(sessionID: str, projectID, device, oss,
   "browser": browser
   }
   payload.update({k: v for k, v in optional_params.items() if v is not None})
-  response = requests.put(url, json=payload, headers=DIALOG_HEADERS)
+  print(url, payload, DIALOG_HEADERS)
+  response = requests.put(url, json=payload, headers=PROJECT_HEADERS)
   return response.json()

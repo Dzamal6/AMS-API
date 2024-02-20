@@ -5,8 +5,17 @@ import pytz
 from concurrent.futures import ThreadPoolExecutor
 from flask import Flask, request, jsonify, current_app
 import hashlib
-from config import user_session_serializer
+from config import user_session_serializer, assistant_session_serializer
 from functools import wraps
+import bcrypt
+
+def check_user_projects(projects, user_projects):
+  out_projects = []
+  print(f'projects: {projects}; user_projects: {user_projects}')
+  for project in projects:
+    if project['Id'] in user_projects:
+      out_projects.append(project)
+  return out_projects
 
 def check_assistant_permission(projectId):
   user_info = get_user_info()
@@ -23,6 +32,18 @@ def get_user_info():
   user_session = request.cookies.get('user_session')
   if user_session:
     return user_session_serializer.loads(user_session)
+
+def get_assistant_session():
+  assistant_session = request.cookies.get('assistant_session')
+  if assistant_session:
+    return assistant_session_serializer.loads(assistant_session)
+
+def check_admin():
+  user_session = get_user_info()
+  if user_session:
+    print(user_session['Roles'])
+    return 'admin' in user_session['Roles'].lower()
+
 
 def roles_required(*required_roles):
 
@@ -51,9 +72,12 @@ def roles_required(*required_roles):
   return decorator
 
 
-def encrypted_str(inp):
-  return hashlib.sha512(inp.encode('UTF-8')).hexdigest()
+def hash_password(password):
+  hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+  return hashed.decode('utf-8')
 
+def check_password(hashed, password):
+  return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
 
 def encrypt_token(key, token):
   fernet = Fernet(key)

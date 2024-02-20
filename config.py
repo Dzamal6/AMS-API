@@ -1,6 +1,10 @@
 import os
 from itsdangerous import URLSafeSerializer
 from pyairtable import Api
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+
+POSTGRES_CONNECTION_STRING = os.environ['POSTGRES_CONNECTION_STRING']
 
 VERSION_ID = os.environ['VERSION_ID']
 DIALOG_API_KEY = os.environ['DIALOG_API_KEY']
@@ -31,3 +35,5 @@ airtable_api = Api(AIRTABLE_API_KEY)
 airtable_token_table = airtable_api.table('appS1lC4Fzpmre5cF', "tbl5kkyONHJFlOcNI")
 airtable_user_table = airtable_api.table('appS1lC4Fzpmre5cF', 'tblTQJkH9Q6X77egQ')
 airtable_points_table = airtable_api.table('appS1lC4Fzpmre5cF', 'tblNaHM7wEr5d3TTe')
+
+limiter = Limiter(key_func=get_remote_address)
