@@ -1,6 +1,7 @@
 def handle_response(response) -> dict:
   response = response.json()
-  if isinstance(response, dict) and response['name'] and response['name'] == 'verror':
+  print(response)
+  if isinstance(response, dict) and response.get('name') and response.get('name') == 'verror':
     print(f'---------ERROR: {response}---------')
     
   respond_text = response

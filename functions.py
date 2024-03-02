@@ -5,9 +5,29 @@ import pytz
 from concurrent.futures import ThreadPoolExecutor
 from flask import Flask, request, jsonify, current_app
 import hashlib
-from config import user_session_serializer, assistant_session_serializer
+from config import user_session_serializer, assistant_session_serializer, chat_session_serializer
 from functools import wraps
 import bcrypt
+from sqlalchemy.inspection import inspect
+
+def model_to_dict(model, include_relationships=False):
+  model_dict = {c.key: getattr(model, c.key)
+                for c in inspect(model).mapper.column_attrs}
+  
+  if include_relationships:
+    for relationship in inspect(model).mapper.relationships:
+        related_objects = getattr(model, relationship.key)
+        if related_objects is not None:
+          if relationship.uselist: 
+            model_dict[relationship.key] = [model_to_dict(obj, include_relationships=False) for obj in related_objects]
+          else:  
+            model_dict[relationship.key] = model_to_dict(related_objects, include_relationships=False)
+
+  for key, value in model_dict.items():
+      if isinstance(value, datetime):
+          model_dict[key] = value.isoformat()  
+  
+  return model_dict
 
 def check_user_projects(projects, user_projects):
   out_projects = []
@@ -19,7 +39,8 @@ def check_user_projects(projects, user_projects):
 
 def check_assistant_permission(projectId):
   user_info = get_user_info()
-  if user_info and projectId in user_info['Assistants']:
+  print("ASSISTANT PERMISSIONS:  ", user_info, projectId)
+  if user_info and any(a['Id'] == projectId for a in user_info['Assistants']):
     return True
   return False
 
@@ -27,6 +48,11 @@ def check_is_current_user(user_id):
   user_info = get_user_info()
   if user_info:
     return user_id == user_info['Id']
+
+def get_chat_session():
+  chat_session = request.cookies.get('chat_session')
+  if chat_session:
+    return chat_session_serializer.loads(chat_session)
 
 def get_user_info():
   user_session = request.cookies.get('user_session')

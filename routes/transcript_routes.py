@@ -1,37 +1,17 @@
-from flask import Blueprint, jsonify, current_app, request
+from flask import Blueprint, jsonify, current_app, request, json
 import requests
 from services.session_service import check_assistant_session
+from services.sql_service import get_user_chat_sessions
+from services.voiceflow_service import retrieve_transcripts
 from config import VOICEFLOW_TRANSCRIPTS
-from functions import roles_required
+from functions import roles_required, get_user_info, get_assistant_session
 
 transcript_bp = Blueprint('blueprints', __name__)
 
 @transcript_bp.route('/get_transcripts', methods=['GET'])
 @roles_required('admin', 'master', 'worker')
 def get_transcripts():
-  token = request.cookies.get('assistant_session')
-  checksesh = check_assistant_session(current_app, token)
-  if not checksesh:
-    return jsonify({'error': "Invalid or expired session data."}), 401
-
-  endpoint = VOICEFLOW_TRANSCRIPTS + f"/{checksesh['project_id']}"
-  headers = {
-      'Authorization': f"{checksesh['token']}",
-      'accept': 'application/json'
-  }
-  res = requests.get(endpoint, headers=headers)
-
-  if res.status_code == 200:
-    print('Retrieved transcripts.')
-    return jsonify({
-        'message': 'Retrieved transcripts.',
-        'transcripts': res.json()
-    }), 200
-  elif res.status_code == 401:
-    return jsonify({'message': 'Invalid session.'}), 401
-  else:
-    print(f'Failed to retrieve transcripts. {res.status_code}')
-    return jsonify({'message': 'Could not retrieve transcripts.'}), 400
+  return retrieve_transcripts()
 
 
 @transcript_bp.route('/update_transcript', methods=['POST'])
@@ -90,10 +70,61 @@ def get_transcript_dialog():
   else:
     return jsonify({'message': 'Transcript retrieval failed.'}), 400
 
-# @transcript_bp.route('/get_user_transcripts', methods=['GET'])
-# def get_user_transcripts(user_id):
-#   all_transcripts = get_transcripts();
-#   user_transcripts = []
-#   if all_transcripts
+@transcript_bp.route('/get_user_transcripts', methods=['GET'])
+def get_user_transcripts():
+  user_info = get_user_info()
+  assistant_session = get_assistant_session()
 
+  if not user_info:
+    return jsonify({'message': 'Unauthenticated.'}), 401
+
+  if not assistant_session:
+    return jsonify({'message': 'Selected assistant could not be resolved.'}), 400
   
+  response, status_code = retrieve_transcripts()
+
+  if status_code != 200 or not response.get_json()['transcripts']:
+    return jsonify({'message': 'Could not retrieve transcripts.'}), status_code
+
+  user_sessions = get_user_chat_sessions(str(user_info['Id']), str(assistant_session['Id']))
+
+  if user_sessions is None:
+    return jsonify({'message': 'Failed to resolve user history.'}), 400
+  
+  user_transcripts = []
+  for transcript in response.get_json()['transcripts']:
+    if transcript['sessionID'] in (session['Id'] for session in user_sessions):
+      user_transcripts.append(transcript)
+
+  return jsonify({'transcripts': user_transcripts}), 200
+
+@transcript_bp.route('/delete_transcript', methods=['POST'])
+def delete_transcript_route():
+  token = request.cookies.get('assistant_session')
+  transcript_id = request.json.get('transcript_id')
+  checksesh = check_assistant_session(current_app, token)
+  if not checksesh:
+    return jsonify({'error': "Invalid or expired session data."}), 401
+
+  headers = {
+      'Authorization': f"{checksesh['token']}",
+  }
+
+  endpoint = VOICEFLOW_TRANSCRIPTS + f"/{checksesh['project_id']}/{transcript_id}"
+
+  print(endpoint)
+
+  res = requests.delete(endpoint, headers=headers)
+  
+  print(res.json())
+  
+  if res.status_code == 200:
+    return jsonify({
+        'message': 'Deleted transcript.',
+        'transcript': res.json()
+    }), 200
+  elif res.status_code == 401:
+    return jsonify({'message': 'Invalid session.'}), 401
+  else:
+    return jsonify({'message': 'Failed to delete transcript'}), 400
+

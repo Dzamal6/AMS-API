@@ -1,9 +1,23 @@
 # from requests import request
-from functions import hash_password, roles_required, check_is_current_user, get_user_info, check_password
-from itsdangerous import URLSafeTimedSerializer as Serializer
-from flask import Blueprint, jsonify, make_response, current_app, request
-from services.sql_service import check_user_exists, add_user, remove_user, get_user, get_all_users, get_all_roles, get_user_roles, update_user
-from config import user_session_serializer, limiter
+from flask import Blueprint, jsonify, make_response, request
+
+from config import limiter, user_session_serializer
+from functions import (
+  check_is_current_user,
+  check_password,
+  get_user_info,
+  hash_password,
+  roles_required,
+)
+from services.sql_service import (
+  add_user,
+  check_user_exists,
+  get_all_roles,
+  get_all_users,
+  get_user,
+  remove_user,
+  update_user,
+)
 
 users_bp = Blueprint('users', __name__)
 
@@ -16,6 +30,7 @@ def create_user_route():
   roles = data['roles']
   assistants = data['assistants']
   exists = check_user_exists(username)
+  
   if exists:
     return jsonify({'error': 'User already exists'}), 400
 
@@ -31,6 +46,7 @@ def delete_user_route():
   print(data)
   user_id = data['user_id']
   is_current_user = check_is_current_user(user_id)
+  
   if is_current_user:
     return jsonify({'error': 'Cannot delete self'}), 400
   remove = remove_user(user_id)
@@ -49,16 +65,19 @@ def update_user_route():
   password = data['password']
   roles = data['roles']
   assistants = data['assistants']
-  if not check_user_exists(username):
+  if not check_user_exists(user_id):
     return jsonify({'error': 'User does not exist'}), 404
-  update = update_user(user_id, username, hash_password(password), roles, assistants)
+
+  password = None if password == '' else hash_password(password)
+    
+  update = update_user(user_id, username, password, roles, assistants)
+  
   if update:
     return jsonify({"message": "User updated successfully", 'user': update}), 200
   else:
     return jsonify({'error': 'Failed to update user.'}), 400
   
 
-# modified password creation and checking (breaking change, login won't work with existing passwords.)
 @users_bp.route('/login', methods=['POST'])
 @limiter.limit('10/minute')
 def login_route():
@@ -67,18 +86,20 @@ def login_route():
   password = data['password']
   remember = data['remember']
   user = get_user(username)
-  print(f"USER: {user}")
+  print(user)
+  print(hash_password(password))
+  
   if not user:
     return jsonify({'message': 'Invalid credentials.'}), 401
   if check_password(user['password_hash'], password):
     serializer = user_session_serializer
     user_info = {
         'Username': username,
-        'Id': user['id'],
-        'Roles': user['roles'],
-        'Assistants':  user['assistants'],
-        'Created': user['created'],
-        'LastModified': user['last_modified'],
+        'Id': user['Id'],
+        'Roles': user['Roles'],
+        'Assistants':  user['Assistants'],
+        'Created': user['Created'],
+        'LastModified': user['LastModified'],
     }
     session_data = serializer.dumps(user_info)
     print('user session token set.')
@@ -92,7 +113,7 @@ def login_route():
                         httponly=True,
                         secure=True,
                         samesite='none',
-                        max_age=604800 if remember else None) # NOT WORKING CORRECTLY
+                        max_age=None if not remember else 1209600)
     return response
   else:
     return jsonify({'message': 'Invalid credentials.'}), 401
@@ -103,10 +124,15 @@ def logout_route():
   response = make_response(jsonify({'message': 'Logout successful'}), 200)
   response.set_cookie('user_session',
                       '',
-                      expires=0,
-                      httponly=True,
+                      max_age=0,
                       secure=True,
-                      samesite='None')
+                      httponly=True,
+                      samesite='none',
+                     )
+  response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+  response.headers["Pragma"] = "no-cache"
+  response.headers["Expires"] = "0"
+
   return response
 
 

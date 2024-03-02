@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify, make_response, current_app
 import requests
 from functions import decrypt_token, encrypt_token, roles_required, check_assistant_permission, get_user_info, check_user_projects
-from services.sql_service import add_assistant, delete_assistant, get_all_assistants
+from services.sql_service import add_assistant, delete_assistant, get_all_assistants, get_assistant_by_id
 from config import AIRTABLE_ENDPOINT, HEADERS, FERNET_KEY, assistant_session_serializer
 
 project_bp = Blueprint('project', __name__)
@@ -13,16 +13,15 @@ def set_project():
   if not check_assistant_permission(project_id):
     return jsonify({'error': 'User does not have access to this project.'}), 401
     
-  print(f'Fetching: {AIRTABLE_ENDPOINT}/{project_id}')
-  response = requests.get(f'{AIRTABLE_ENDPOINT}/{project_id}', headers=HEADERS)
-  responseJSON = response.json()
-
-  if response.status_code == 200 and responseJSON['fields']:
-    Tok = decrypt_token(FERNET_KEY, responseJSON['fields']['token'])
+  assistant = get_assistant_by_id(project_id)
+  
+  if assistant is not None and isinstance(assistant, dict):
+    Tok = decrypt_token(FERNET_KEY, assistant['Token'])
     serializer = assistant_session_serializer
     token = serializer.dumps({
         'token': Tok,
-        'project_id': responseJSON['fields']['projectId']
+        'project_id': assistant['ProjectId'],
+        'Id': str(assistant['Id'])
     })
     print('Assistant session token set.')
 
@@ -32,9 +31,9 @@ def set_project():
     response = make_response(
         jsonify({
             'message': 'Connection was successful.',
-            'assistant': {'Name': responseJSON['fields']['name'],
-                          'Id': responseJSON['id'],
-                          'Created': responseJSON['fields']['Created'],
+            'assistant': {'Name': assistant['Name'],
+                          'Id': str(assistant['Id']),
+                          'Created': assistant['Created'],
                          }
         }), 200)
     response.set_cookie('assistant_session',
@@ -45,24 +44,11 @@ def set_project():
     return response
   else:
     return jsonify({'message':
-                    "Connection was unsuccessful."}), response.status_code
+                    "Connection was unsuccessful."}), 400
 
 
 @project_bp.route('/get_projects', methods=['GET'])
 def get_projects():
-  # Old code
-  # query = '?fields%5B%5D=name&fields%5B%5D=Created'
-  # response = requests.get(AIRTABLE_ENDPOINT + query, headers=HEADERS)
-  # if response.status_code == 200 and response.json()['records']:
-  #   return jsonify({
-  #       'message': 'Connection was successful.',
-  #       'records': response.json()['records']
-  #   })
-  # elif response.status_code == 200:
-  #   return jsonify({'message': 'There are no records in the database.'}), 200
-  # else:
-  #   return jsonify({'message': 'Could not obtain records.'}), 400
-  # New code
   projects = get_all_assistants()
   user_session = get_user_info()
   if not user_session:
@@ -88,7 +74,6 @@ def add_project():
   headers = {'Authorization': f'{token}', 'accept': 'application/json'}
   response = requests.get(endpoint, headers=headers)
   encrypted_token = encrypt_token(FERNET_KEY, token)
-  print(response)
 
   if response.status_code == 200:
     res = add_assistant(encrypted_token,

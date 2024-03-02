@@ -1,14 +1,17 @@
 from sqlalchemy import create_engine
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import sessionmaker, scoped_session
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import NullPool 
 from config import POSTGRES_CONNECTION_STRING
 from database.base import Base
-from database.models import User, Role, Assistant, TokenUsage
+from database.models import User, Role, Assistant, TokenUsage, Document
 from functions import hash_password
 import uuid
 from contextlib import contextmanager
+import os
+import hashlib
 
-engine = create_engine(POSTGRES_CONNECTION_STRING, pool_size=5, max_overflow=0)
+engine = create_engine(POSTGRES_CONNECTION_STRING, echo=True, pool_size=4, max_overflow=0, pool_recycle=60)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base.metadata.bind = engine
 
@@ -49,3 +52,23 @@ def seed_data():
         session.commit()
   except Exception as e:
     print(f"An error occurred during seeding: {e}")
+
+def upload_documents():
+  try:
+    with session_scope() as session:
+      for filename in os.listdir('docs'):
+        file_path = os.path.join('docs', filename)
+
+        with open(file_path, 'rb') as file:
+          file_content = file.read()
+
+        file_hash = hashlib.sha256(file_content).hexdigest()
+
+        if session.query(Document).filter_by(content_hash=file_hash).first():
+          print(f"Duplicate found, skipping: {filename}")
+          continue
+
+        document = Document(id=uuid.uuid4(), file=file_content, content_hash=file_hash)
+        session.add(document)
+  except Exception as e:
+    print(f"An error occured during document upload: {e}")

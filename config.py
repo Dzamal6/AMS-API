@@ -27,9 +27,12 @@ LOGIN_KEY = os.environ['LOGIN_KEY']
 
 user_session_serializer = URLSafeSerializer(LOGIN_KEY)
 assistant_session_serializer = URLSafeSerializer(SECRET_KEY)
+chat_session_serializer = URLSafeSerializer(SECRET_KEY)
 
 TA_INSTRUCTIONS = os.environ["TA_INS_SYSTEM"]
 OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
+
+CLIENT_APP = os.environ['CLIENT_APP']
 
 airtable_api = Api(AIRTABLE_API_KEY)
 airtable_token_table = airtable_api.table('appS1lC4Fzpmre5cF', "tbl5kkyONHJFlOcNI")
