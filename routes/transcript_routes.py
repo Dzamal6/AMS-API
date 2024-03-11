@@ -1,7 +1,7 @@
 from flask import Blueprint, jsonify, current_app, request, json
 import requests
 from services.session_service import check_assistant_session
-from services.sql_service import get_user_chat_sessions
+from services.sql_service import get_user_chat_sessions, remove_chat_session 
 from services.voiceflow_service import retrieve_transcripts
 from config import VOICEFLOW_TRANSCRIPTS
 from functions import roles_required, get_user_info, get_assistant_session
@@ -102,22 +102,25 @@ def get_user_transcripts():
 def delete_transcript_route():
   token = request.cookies.get('assistant_session')
   transcript_id = request.json.get('transcript_id')
+  session_id = request.json.get('session_id')
   checksesh = check_assistant_session(current_app, token)
   if not checksesh:
     return jsonify({'error': "Invalid or expired session data."}), 401
 
+  remove_session = remove_chat_session(session_id)
+  # Transcript is automatically cascade deleted from db on session deletion
+
+  if not remove_session:
+    return jsonify({'error': "Failed to remove session."}), 400
+  
   headers = {
       'Authorization': f"{checksesh['token']}",
   }
 
   endpoint = VOICEFLOW_TRANSCRIPTS + f"/{checksesh['project_id']}/{transcript_id}"
 
-  print(endpoint)
-
   res = requests.delete(endpoint, headers=headers)
-  
-  print(res.json())
-  
+    
   if res.status_code == 200:
     return jsonify({
         'message': 'Deleted transcript.',

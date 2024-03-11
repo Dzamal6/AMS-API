@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify, make_response
 from functions import get_user_info, get_assistant_session, get_chat_session
-from services.sql_service import create_chat_session
+from services.sql_service import create_chat_session, create_transcript
 import services.voiceflow_service as vs
 import uuid
 from config import chat_session_serializer
@@ -97,13 +97,13 @@ def transcript():
   chat_session = get_chat_session()
 
   if not assistant_session:
-    return jsonify({'error': "No assistant session"}), 400
+    return jsonify({'error': "Failed to resolve assistant session"}), 400
   
   if not user:
-    return jsonify({"error": "You need a user"}), 400
+    return jsonify({"error": "Failed to resolve user session"}), 400
 
   if not chat_session:
-    return jsonify({'error': "Failed to resolve session."})
+    return jsonify({'error': "Failed to resolve chat session."})
 
   create = vs.create_transcript(chat_session['Id'], assistant_session['project_id'], device, oss, browser)
 
@@ -111,5 +111,11 @@ def transcript():
 
   if create.get('message') and create['message'] == 'Unauthorized':
     return jsonify({'error': create}), 400
+
+  sql_create = create_transcript(create['_id'], create['sessionID'], user['Id'], user['Username'])
+
+  if not sql_create:
+    return jsonify({'error': "Failed to create transcript in Database"}), 400
+    # Delete transcript from VF and retry action until it succeeds
     
   return create, 200

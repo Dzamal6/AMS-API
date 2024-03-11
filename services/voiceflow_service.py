@@ -2,7 +2,9 @@ import requests
 from flask import jsonify, current_app, request
 from config import VERSION_ID, DIALOG_API_KEY, PROJECT_API_KEY, VOICEFLOW_TRANSCRIPTS
 from services.session_service import check_assistant_session
+from services.sql_service import get_all_chat_sessions, get_all_transcripts
 from voiceflow_functions import handle_response
+from functions import transform_transcript_names
 
 DIALOG_HEADERS = {
   "accept": "application/json",
@@ -101,9 +103,12 @@ def retrieve_transcripts():
 
   if res.status_code == 200:
     print('Retrieved transcripts.')
+    sql_transcripts = get_all_transcripts()
+    transformed = transform_transcript_names(res.json(), sql_transcripts)
+    
     return jsonify({
         'message': 'Retrieved transcripts.',
-        'transcripts': res.json()
+        'transcripts': transformed
     }), 200
   elif res.status_code == 401:
     return jsonify({'message': 'Invalid session.'}), 401

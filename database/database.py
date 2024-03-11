@@ -10,6 +10,7 @@ import uuid
 from contextlib import contextmanager
 import os
 import hashlib
+from werkzeug.utils import secure_filename
 
 engine = create_engine(POSTGRES_CONNECTION_STRING, echo=True, pool_size=4, max_overflow=0, pool_recycle=60)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -54,21 +55,22 @@ def seed_data():
     print(f"An error occurred during seeding: {e}")
 
 def upload_documents():
-  try:
-    with session_scope() as session:
-      for filename in os.listdir('docs'):
-        file_path = os.path.join('docs', filename)
+      try:
+          with session_scope() as session:
+              docs_dir = 'docs'
+              for filename in os.listdir(docs_dir):
+                  safe_name = secure_filename(filename)
+                  safe_name = safe_name.split('.')[0]
+                  file_path = os.path.join(docs_dir, filename)
+                  with open(file_path, 'rb') as file:
+                      file_content = file.read()
+                  file_hash = hashlib.sha256(file_content).hexdigest()
+                  if session.query(Document).filter_by(content_hash=file_hash).first():
+                      print(f"Duplicate found, skipping: {safe_name}")
+                      continue
+                  document = Document(id=uuid.uuid4(), name=safe_name, content_hash=file_hash, file=file_content)
+                  session.add(document)
+                  print(f"Document uploaded: {safe_name}")
 
-        with open(file_path, 'rb') as file:
-          file_content = file.read()
-
-        file_hash = hashlib.sha256(file_content).hexdigest()
-
-        if session.query(Document).filter_by(content_hash=file_hash).first():
-          print(f"Duplicate found, skipping: {filename}")
-          continue
-
-        document = Document(id=uuid.uuid4(), file=file_content, content_hash=file_hash)
-        session.add(document)
-  except Exception as e:
-    print(f"An error occured during document upload: {e}")
+      except Exception as e:
+          print(f"An error occurred during document upload: {e}")

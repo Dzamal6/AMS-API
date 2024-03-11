@@ -10,6 +10,18 @@ from functools import wraps
 import bcrypt
 from sqlalchemy.inspection import inspect
 
+
+def transform_transcript_names(vf_transcripts, sql_transcripts):
+  # TODO: If an sql_transcript is not found in vf_transcripts, delete the transcript
+  
+  for transcript in vf_transcripts:
+    for sql_transcript in sql_transcripts:
+      if transcript['sessionID'] == sql_transcript['SessionID']:
+        transcript['name'] = sql_transcript['Username']
+        break
+        
+  return vf_transcripts
+
 def model_to_dict(model, include_relationships=False):
   model_dict = {c.key: getattr(model, c.key)
                 for c in inspect(model).mapper.column_attrs}
@@ -39,7 +51,7 @@ def check_user_projects(projects, user_projects):
 
 def check_assistant_permission(projectId):
   user_info = get_user_info()
-  print("ASSISTANT PERMISSIONS:  ", user_info, projectId)
+  
   if user_info and any(a['Id'] == projectId for a in user_info['Assistants']):
     return True
   return False

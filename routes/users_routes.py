@@ -86,8 +86,6 @@ def login_route():
   password = data['password']
   remember = data['remember']
   user = get_user(username)
-  print(user)
-  print(hash_password(password))
   
   if not user:
     return jsonify({'message': 'Invalid credentials.'}), 401
