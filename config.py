@@ -32,8 +32,6 @@ chat_session_serializer = URLSafeSerializer(SECRET_KEY)
 TA_INSTRUCTIONS = os.environ["TA_INS_SYSTEM"]
 OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
 
-CLIENT_APP = os.environ['CLIENT_APP']
-
 airtable_api = Api(AIRTABLE_API_KEY)
 airtable_token_table = airtable_api.table('appS1lC4Fzpmre5cF', "tbl5kkyONHJFlOcNI")
 airtable_user_table = airtable_api.table('appS1lC4Fzpmre5cF', 'tblTQJkH9Q6X77egQ')
@@ -41,4 +39,4 @@ airtable_points_table = airtable_api.table('appS1lC4Fzpmre5cF', 'tblNaHM7wEr5d3T
 
 limiter = Limiter(key_func=get_remote_address)
 
-ALLOWED_ORIGINS = ['https://127.0.0.1:5173', 'https://localhost:5173', config.CLIENT_APP]
+ALLOWED_ORIGINS = ['https://127.0.0.1:5173', 'https://localhost:5173', os.environ['CLIENT_APP']]
