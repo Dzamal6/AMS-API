@@ -86,7 +86,7 @@ def get_all_chat_sessions():
     print(f'Error: {e}')
     return None
 
-def remove_chat_session(sessionID: str) -> (str | None):
+def remove_chat_session(sessionID: str):
   try:
     uuid.UUID(sessionID)
   except ValueError:
