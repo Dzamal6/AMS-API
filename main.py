@@ -11,19 +11,18 @@ import logging
 app = Flask(__name__)
 CORS(app,
      supports_credentials=True,
-     origins=['https://127.0.0.1:5173', 'https://localhost:5173', config.CLIENT_APP])
+     origins=config.ALLOWED_ORIGINS)
 app.config['SECRET_KEY'] = config.SECRET_KEY
 app.config['LOGIN_KEY'] = config.LOGIN_KEY
 
 config.limiter.init_app(app)
 
-logging.basicConfig()
-logging.getLogger('sqlalchemy.engine').setLevel(logging.DEBUG)
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
+logging.getLogger('sqlalchemy.engine').setLevel(logging.DEBUG)
 
-Base.metadata.create_all(engine)
-seed_data()
-upload_documents()
+# Base.metadata.create_all(engine)
+# seed_data()
+# upload_documents()
 
 app.before_request(check_session_validation)
 

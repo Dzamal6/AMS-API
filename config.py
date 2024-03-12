@@ -40,3 +40,5 @@ airtable_user_table = airtable_api.table('appS1lC4Fzpmre5cF', 'tblTQJkH9Q6X77egQ
 airtable_points_table = airtable_api.table('appS1lC4Fzpmre5cF', 'tblNaHM7wEr5d3TTe')
 
 limiter = Limiter(key_func=get_remote_address)
+
+ALLOWED_ORIGINS = ['https://127.0.0.1:5173', 'https://localhost:5173', config.CLIENT_APP]

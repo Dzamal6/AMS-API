@@ -32,6 +32,10 @@ def initialize():
   return jsonify({'thread_id': thread.id}), 200
 
 
+
+
+
+
 # Temporary assistant. Delete when the actual openai Endpoints are finished.
 @openai_bp.route('/chat', methods=['POST'])
 def chat():
