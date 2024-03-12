@@ -21,6 +21,14 @@ def initialize():
   thread = client.beta.threads.create()
   print(f"New thread created with ID: {thread.id}")
 
+  as_instructions = request.json.get('as_instructions')
+
+  my_assistant = client.beta.assistants.create(
+      instructions=as_instructions,
+      name="brog",
+      model="gpt-4",
+  )
+
   return jsonify({'thread_id': thread.id}), 200
 
 

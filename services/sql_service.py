@@ -547,9 +547,36 @@ def upload_docs(doc):
       dup_doc_hash = session.query(Document).filter_by(content_hash=doc_hash).first()
       dup_doc_name = session.query(Document).filter_by(name=doc.filename).first()
       if dup_doc_hash or dup_doc_name:
-        print("Dup")
         return jsonify({'error': 'Duplicate document found.'}), 400
       document = Document(id=uuid.uuid4(), name=doc.filename, content_hash=doc_hash, file=doc_content)
       session.add(document)
   except Exception as e:
-    print("fuck you")
+    print(f"An error occurred: {e}")
+    return None
+
+
+def get_docs():
+  try:
+    with session_scope() as session:
+      docs = session.query(Document).all()
+      return [{"Id": str(doc.id), "Name": doc.name, "Content": doc.file} for doc in docs]
+  except Exception as e:
+    print(f"An error occurred: {e}")
+    return None
+
+def delete_doc(docId):
+  try:
+    with session_scope() as session:
+      result = session.query(Document).filter_by(id=docId).first()
+      if result:
+        session.delete(result)
+        session.commit()
+        print(f"Deleted document with ID {docId}")
+        return True
+      else:
+        print(f"Document with ID {docId} not found")
+        return False
+  except Exception as e:
+    print(f"An error occurred: {e}")
+    return False
+    
