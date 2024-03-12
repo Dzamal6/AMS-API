@@ -7,6 +7,7 @@ import tiktoken
 from database.database import session_scope
 import uuid
 from database.models import Document
+from functions import validate_authorization_key
 
 openai_bp = Blueprint("openai", __name__)
 
@@ -14,8 +15,8 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 
 # TODO: auth token for endpoints called from voiceflow (exempt from session checks)
 
-@openai_bp.route('/initialize', methods=['GET'])
-def initialize():
+@openai_bp.route('/initialize_dev', methods=['GET'])
+def initialize_dev():
   # agent_id = request.json.get('agent_id')
   print("Starting a new conversation...")
   thread = client.beta.threads.create()
@@ -32,14 +33,29 @@ def initialize():
   return jsonify({'thread_id': thread.id}), 200
 
 
+# Temporary endpoint for testing purposes
+@openai_bp.route('/initialize', methods=['GET'])
+def initialize():
+  auth_key = request.headers.get('Authorization')
+  auth = validate_authorization_key(auth_key)
 
-
-
+  if not auth_key or not auth:
+    return jsonify({'error': 'Unauthorized'}), 401
+  
+  print("Starting a new conversation...")
+  thread = client.beta.threads.create()
+  print(f"New thread created with ID: {thread.id}")
+  return jsonify({"thread_id": thread.id})
 
 # Temporary assistant. Delete when the actual openai Endpoints are finished.
 @openai_bp.route('/chat', methods=['POST'])
 def chat():
+  auth_key = request.headers.get('Authorization')
+  auth = validate_authorization_key(auth_key)
 
+  if not auth_key or not auth:
+    return jsonify({'error': 'Unauthorized'}), 401
+  
   assistant_id = 'asst_DrK1j2mtfTa5pJfS3hwJP0qY'
   thread_id = request.json.get('thread_id')
   user_input = request.json.get('message')

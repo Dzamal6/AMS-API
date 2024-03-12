@@ -9,7 +9,13 @@ from config import user_session_serializer, assistant_session_serializer, chat_s
 from functools import wraps
 import bcrypt
 from sqlalchemy.inspection import inspect
+import os
 
+
+def validate_authorization_key(token):
+  if token != os.environ['AGENT_AUTHORIZATION_KEY']: 
+    return False
+  return True
 
 def transform_transcript_names(vf_transcripts, sql_transcripts):
   # TODO: If an sql_transcript is not found in vf_transcripts, delete the transcript
