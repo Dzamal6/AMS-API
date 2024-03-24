@@ -1,5 +1,5 @@
 from database.database import SessionLocal, session_scope
-from database.models import User, Role, Assistant, ChatSession, Transcript, Document
+from database.models import User, Role, Assistant, ChatSession, Transcript, Document, Agent
 from sqlalchemy.exc import SQLAlchemyError, NoResultFound
 import uuid
 from flask import jsonify
@@ -21,13 +21,20 @@ def get_all_transcripts():
         return None
 
       return [{
-          'Id': str(transcript.id),
-          'TranscriptID': str(transcript.transcriptID),
-          'SessionID': str(transcript.sessionID),
-          'UserID': str(transcript.userID),
-          'Username': str(transcript.username),
-          "LastModified": transcript.last_modified.strftime("%Y-%m-%d %H:%M:%S"),
-          'Created': transcript.created.strftime("%Y-%m-%d %H:%M:%S")
+          'Id':
+          str(transcript.id),
+          'TranscriptID':
+          str(transcript.transcriptID),
+          'SessionID':
+          str(transcript.sessionID),
+          'UserID':
+          str(transcript.userID),
+          'Username':
+          str(transcript.username),
+          "LastModified":
+          transcript.last_modified.strftime("%Y-%m-%d %H:%M:%S"),
+          'Created':
+          transcript.created.strftime("%Y-%m-%d %H:%M:%S")
       } for transcript in transcripts]
 
   except SQLAlchemyError as e:
@@ -72,11 +79,16 @@ def get_all_chat_sessions():
         return None
 
       return [{
-          "Id": str(chat_session.id),
-          "UserID": str(chat_session.userID),
-          "AssistantID": str(chat_session.id),
-          "Created": str(chat_session.created.strftime("%Y-%m-%d %H:%M:%S")),
-          "LastModified": str(chat_session.last_modified.strftime("%Y-%m-%d %H:%M:%S"))
+          "Id":
+          str(chat_session.id),
+          "UserID":
+          str(chat_session.userID),
+          "AssistantID":
+          str(chat_session.id),
+          "Created":
+          str(chat_session.created.strftime("%Y-%m-%d %H:%M:%S")),
+          "LastModified":
+          str(chat_session.last_modified.strftime("%Y-%m-%d %H:%M:%S"))
       } for chat_session in chat_sessions_query]
 
   except SQLAlchemyError as e:
@@ -86,13 +98,14 @@ def get_all_chat_sessions():
     print(f'Error: {e}')
     return None
 
+
 def remove_chat_session(sessionID: str):
   try:
     uuid.UUID(sessionID)
   except ValueError:
     print(f'Invalid session ID: {sessionID}.')
     return sessionID
-    
+
   try:
     with session_scope() as session:
       chat_session = session.query(ChatSession).filter(
@@ -250,37 +263,6 @@ def remove_user(user_id):
     return jsonify({'message': 'An error occurred'}), 500
 
 
-# DEPRECATED
-def login_user(username, password):
-  try:
-    with session_scope() as session:
-      user = session.query(User).filter(User.username == username,
-                                        User.password == password).first()
-      if user:
-        roles = [role.name for role in user.roles]
-        assistants = [assistant.name for assistant in user.assistants]
-        user_data = {
-            "Id":
-            str(user.id),
-            "Username":
-            user.username,
-            "Roles":
-            roles,
-            "Assistants":
-            assistants,
-            "Created":
-            user.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
-            "LastModified":
-            user.last_modified.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
-        }
-        return {'user': user_data, 'status': 200}
-      else:
-        return {'message': "User not found", 'status': 404}
-  except Exception as e:
-    print(f"Error: {e}")
-    return {'message': 'An error occurred', 'status': 500}
-
-
 def check_user_exists(user_id):
   try:
     with session_scope() as session:
@@ -291,7 +273,6 @@ def check_user_exists(user_id):
     return False
 
 
-# WORKS
 def get_all_roles():
   try:
     with session_scope() as session:
@@ -303,7 +284,6 @@ def get_all_roles():
     return []
 
 
-# WORKS
 def get_user_roles(user_roles_ids):
   try:
     with session_scope() as session:
@@ -315,7 +295,6 @@ def get_user_roles(user_roles_ids):
     return []
 
 
-# WORKS
 def get_all_assistants():
   try:
     with session_scope() as session:
@@ -334,7 +313,6 @@ def get_all_assistants():
     return []
 
 
-# WORKS
 def get_user_assistants(user_assistants_ids):
   try:
     with session_scope() as session:
@@ -402,7 +380,6 @@ def get_all_users():
     return []
 
 
-# WORKS
 def get_user(username):
   try:
     with session_scope() as session:
@@ -435,7 +412,6 @@ def get_user(username):
     return {}
 
 
-# WORKS
 def add_assistant(project_token, project_name, project_vID, project_id):
   try:
     with session_scope() as session:
@@ -473,7 +449,6 @@ def add_assistant(project_token, project_name, project_vID, project_id):
                     "An error occurred while adding the assistant."}), 400
 
 
-# WORKS
 def delete_assistant(project_name):
   try:
     with session_scope() as session:
@@ -539,30 +514,76 @@ def update_user(user_id,
     return None
 
 
-def upload_docs(doc):
+def upload_files_metadata(files):
+  responses = []
   try:
     with session_scope() as session:
-      doc_content = doc.read()
-      doc_hash = hashlib.sha256(doc_content).hexdigest()
-      dup_doc_hash = session.query(Document).filter_by(content_hash=doc_hash).first()
-      dup_doc_name = session.query(Document).filter_by(name=doc.filename).first()
-      if dup_doc_hash or dup_doc_name:
-        return jsonify({'error': 'Duplicate document found.'}), 400
-      document = Document(id=uuid.uuid4(), name=doc.filename, content_hash=doc_hash, file=doc_content)
-      session.add(document)
+      file_data = []
+      for file_id, doc in files.items():
+        doc_content = doc.read()
+        doc.seek(0)
+        doc_hash = hashlib.sha256(doc_content).hexdigest()
+        file_data.append((doc, file_id, doc.filename, doc_hash))
+
+      hashes = [f[3] for f in file_data]
+      existing_docs = session.query(Document).filter(
+          Document.content_hash.in_(hashes)).all()
+      existing_hashes = {doc.content_hash for doc in existing_docs}
+
+      for doc, file_id, filename, doc_hash in file_data:
+        if doc_hash in existing_hashes:
+          responses.append(('error', {
+              'error':
+              f'Duplicate document found for file {file_id}.',
+              "Id": file_id,
+              "Content_Hash": doc_hash
+          }))
+          continue
+
+        document = Document(id=file_id, name=filename, content_hash=doc_hash)
+        session.add(document)
+        session.commit()
+
+        responses.append(('success', {
+            "Id":
+            document.id,
+            "Name":
+            document.name,
+            "Content_hash":
+            document.content_hash,
+            "Created":
+            document.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
+            "LastModified":
+            document.last_modified.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
+        }))
+
   except Exception as e:
     print(f"An error occurred: {e}")
-    return None
+    responses.append(('error', {
+        'error': f'An error occurred during upload. {str(e)}'
+    }))
+
+  return responses
 
 
-def get_docs():
+def get_all_files():
   try:
     with session_scope() as session:
       docs = session.query(Document).all()
-      return [{"Id": str(doc.id), "Name": doc.name, "Content": doc.file} for doc in docs]
+      return [{
+          "Id":
+          str(doc.id),
+          "Name":
+          doc.name,
+          "Created":
+          doc.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
+          "LastModified":
+          doc.last_modified.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
+      } for doc in docs]
   except Exception as e:
     print(f"An error occurred: {e}")
     return None
+
 
 def delete_doc(docId):
   try:
@@ -572,11 +593,131 @@ def delete_doc(docId):
         session.delete(result)
         session.commit()
         print(f"Deleted document with ID {docId}")
-        return True
+        return docId
       else:
         print(f"Document with ID {docId} not found")
-        return False
+        return None
   except Exception as e:
     print(f"An error occurred: {e}")
-    return False
-    
+    return None
+
+
+def get_agent_data(agentId):
+  try:
+    with session_scope() as session:
+      agent = session.query(Agent).filter_by(id=agentId).first()
+      if not agent:
+        return None
+
+      agent_dict = {
+          column.name: getattr(agent, column.name)
+          for column in agent.__table__.columns
+      }
+
+      agent_dict['documents'] = [{
+          "document_id": document.id,
+      } for document in agent.documents]
+  except Exception as e:
+    print(f"An error occurred: {e}")
+    return None
+
+
+def upload_agent_metadata(agent_details: dict[str, str],
+                          assistant_ids: list[str], 
+                          document_ids: (list[str] | None)=None):
+  try:
+    with session_scope() as session:
+      new_agent = Agent(id=uuid.uuid4(),
+                        name=agent_details['name'],
+                        system_prompt=agent_details['system_prompt'],
+                        description=agent_details['description'],
+                        model=agent_details['model'])
+      assistants = session.query(Assistant).filter(
+          Assistant.id.in_(assistant_ids)).all()
+      new_agent.assistants = assistants
+
+      if document_ids:
+        documents = session.query(Document).filter(
+            Document.id.in_(document_ids)).all()
+        new_agent.documents = documents
+
+      session.add(new_agent)
+      session.commit()
+
+      return {
+          "Id": str(new_agent.id),
+          "Name": new_agent.name,
+          "Model": new_agent.model,
+          "Instructions": new_agent.system_prompt,
+          "Description": new_agent.description,
+          "Created": new_agent.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
+          "LastModified": new_agent.last_modified.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
+      }
+
+  except Exception as e:
+    print(f"An error occurred: {e}")
+    return None
+
+
+def retrieve_all_agents():
+  try:
+    with session_scope() as session:
+      agents = session.query(Agent).all()
+
+      # TODO: files 
+      return [{
+        "Id": agent.id,
+        "Name": agent.name,
+        "Model": agent.model,
+        "Instructions": agent.system_prompt,
+        "Description": agent.description,
+        "Created": agent.created,
+        "LastModified": agent.last_modified
+      } for agent in agents]
+
+  except Exception as e:
+    print(f"An error occurred: {e}")
+    return None
+
+def delete_agent(agent_id):
+  try:
+    with session_scope() as session:
+      result = session.query(Agent).filter_by(id=agent_id).first()
+      if result:
+        session.delete(result)
+        session.commit()
+        print(f"Deleted agent with ID {agent_id}")
+        return agent_id
+      else:
+        print(f"Agent with ID {agent_id} not found")
+        return None
+
+  except Exception as e:
+    print(f"An error occurred: {e}")
+    return None
+
+def update_agent(agent_id, name, description, instructions, model):
+  try:
+    with session_scope() as session:
+      result = session.query(Agent).filter_by(id=agent_id).first()
+      if not result:
+        return None
+
+      result.name = name
+      result.description = description
+      result.system_prompt = instructions
+      result.model = model
+      session.commit()
+      return {
+        "Id": str(result.id),
+        "Name": result.name,
+        "Description": result.description,
+        "Instructions": result.system_prompt,
+        "Model": result.model,
+        "Created": result.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
+        "LastModified": result.last_modified.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
+      }
+      
+  except Exception as e:
+    print(f"An error occurred: {e}")
+    return None

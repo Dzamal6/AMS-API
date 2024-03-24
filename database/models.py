@@ -34,9 +34,6 @@ class Role(Base):
   last_modified = Column(DateTime,
                          default=datetime.utcnow,
                          onupdate=datetime.utcnow)
-  documents = relationship('Document',
-                           secondary='document_roles',
-                           back_populates='roles')
 
 
 class Assistant(Base):
@@ -49,6 +46,9 @@ class Assistant(Base):
   token = Column(String, unique=True, index=True)
   vID = Column(String, unique=True, index=True)
   projectID = Column(String, unique=True, index=True)
+  agents = relationship('Agent',
+                        secondary='agent_assistant',
+                        back_populates='assistants')
   created = Column(DateTime, default=datetime.utcnow)
   last_modified = Column(DateTime,
                          default=datetime.utcnow,
@@ -111,36 +111,54 @@ class Document(Base):
   __tablename__ = "documents"
   id = Column(UUID(as_uuid=True), primary_key=True, index=True)
   name = Column(String)
-  file = Column(LargeBinary)
   content_hash = Column(String(64), unique=True)
-  roles = relationship('Role',
-                       secondary='document_roles',
-                       back_populates='documents')
   agents = relationship("Agent",
                         secondary='agent_file',
                         back_populates='documents')
+  created = Column(DateTime, default=datetime.utcnow)
+  last_modified = Column(DateTime,
+                         default=datetime.utcnow,
+                         onupdate=datetime.utcnow)
 
 
 class Agent(Base):
   __tablename__ = 'agents'
   id = Column(UUID(as_uuid=True), primary_key=True, index=True)
+  name = Column(String, index=True, nullable=False)
   system_prompt = Column(String, nullable=False)
   description = Column(String)
   documents = relationship("Document",
                            secondary='agent_file',
                            back_populates="agents")
+  assistants = relationship("Assistant", secondary='agent_assistant', back_populates='agents')
+  model = Column(String(24), nullable=False)
+  created = Column(DateTime, default=datetime.utcnow)
+  last_modified = Column(DateTime,
+                         default=datetime.utcnow,
+                         onupdate=datetime.utcnow)
 
-  agent_file_table = Table(
-      'agent_file', Base.metadata,
-      Column('agent_id',
-             UUID(as_uuid=True),
-             ForeignKey('agents.id'),
-             primary_key=True),
-      Column('document_id',
-             UUID(as_uuid=True),
-             ForeignKey('documents.id'),
-             primary_key=True))
 
+agent_assistant = Table(
+    'agent_assistant', Base.metadata,
+    Column('agent_id',
+           UUID(as_uuid=True),
+           ForeignKey('agents.id'),
+           primary_key=True),
+    Column('assistant_id',
+           UUID(as_uuid=True),
+           ForeignKey('assistants.id'),
+           primary_key=True))
+
+agent_file_table = Table(
+    'agent_file', Base.metadata,
+    Column('agent_id',
+           UUID(as_uuid=True),
+           ForeignKey('agents.id'),
+           primary_key=True),
+    Column('document_id',
+           UUID(as_uuid=True),
+           ForeignKey('documents.id'),
+           primary_key=True))
 
 assistant_usage = Table(
     'assistant_usage', Base.metadata,
@@ -173,15 +191,4 @@ user_assistants = Table(
     Column('assistant_id',
            UUID(as_uuid=True),
            ForeignKey('assistants.id'),
-           primary_key=True))
-
-document_roles = Table(
-    'document_roles', Base.metadata,
-    Column('document_id',
-           UUID(as_uuid=True),
-           ForeignKey('documents.id'),
-           primary_key=True),
-    Column('role_id',
-           UUID(as_uuid=True),
-           ForeignKey('roles.id'),
            primary_key=True))

@@ -67,7 +67,6 @@ def interact():
   if not chat_session:
     return jsonify({'error': "Failed to resolve session."})
 
-  print(f'btn: {btn}; response: {response}')
   if btn:
     return jsonify(vs.post_button(chat_session['Id'], btn)), 200
   else:

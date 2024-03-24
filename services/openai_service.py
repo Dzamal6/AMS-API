@@ -1,17 +1,14 @@
 from flask import jsonify
-import openai.assistants as opa
-import openai
 import tiktoken
+import openai
 import os
+import json
 from packaging import version
-import openaiw
-from openai import OpenAI
+from config import OPENAI_CLIENT as client
+import time
 
 required_version = version.parse("1.1.1")
 current_version = version.parse(openai.__version__)
-OPENAI_API_KEY = os.environ['OPENAI_API_KEY']
-
-client = OpenAI(api_key=OPENAI_API_KEY)
 
 if current_version < required_version:
   raise ValueError(
@@ -66,7 +63,38 @@ def chat_ta(assistant_id, assistant_name, thread_id, user_input):
   )
   
   # Token Updates
-  update_assistant_tokens(assistant_name, inp_tokens, inp_cost_tok, out_tokens,
-                          out_cost_tok)
+  # update_assistant_tokens(assistant_name, inp_tokens, inp_cost_tok, out_tokens,
+  #                         out_cost_tok)
   
   return response
+
+
+# def create_agent(agent_id):
+#   file = f'agents/{agent_id}.json'
+
+#   if os.path.exists(file):
+#     with open(file, 'r') as file:
+#       assistant_data = json.load(file)
+#       assistant_id = assistant_data['assistant_id']
+#       print("Loaded existing assistant ID")
+#   else:
+#     objections_file = client.files.create(file=open(
+#         "Files/Namitkovnik - domlouvani analyzy.docx", "rb"),
+#                                           purpose="assistants")
+#     assistant = client.beta.assistants.create(name="ta_objections",
+#                                               instructions=instructions,
+#                                               model=model,
+#                                               tools=[{
+#                                                   "type": "retrieval"
+#                                               }],
+#                                               file_ids=[
+#                                                   objections_file.id,
+#                                               ])
+
+#     with open(file, 'w') as file:
+#       json.dump({'assistant_id': assistant.id}, file)
+#       print('Created a new assistant and saved the ID')
+
+#     assistant_id = assistant.id
+
+#   return assistant_id

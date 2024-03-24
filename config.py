@@ -3,6 +3,7 @@ from itsdangerous import URLSafeSerializer
 from pyairtable import Api
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from openai import OpenAI
 
 POSTGRES_CONNECTION_STRING = os.environ['POSTGRES_CONNECTION_STRING']
 
@@ -31,6 +32,7 @@ chat_session_serializer = URLSafeSerializer(SECRET_KEY)
 
 TA_INSTRUCTIONS = os.environ["TA_INS_SYSTEM"]
 OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
+OPENAI_CLIENT = OpenAI(api_key=OPENAI_API_KEY)
 
 airtable_api = Api(AIRTABLE_API_KEY)
 airtable_token_table = airtable_api.table('appS1lC4Fzpmre5cF', "tbl5kkyONHJFlOcNI")
