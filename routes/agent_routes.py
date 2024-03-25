@@ -1,4 +1,3 @@
-from os import name
 from flask import Blueprint, request, jsonify
 from config import OPENAI_CLIENT as client
 from services.sql_service import upload_agent_metadata, retrieve_all_agents, delete_agent, update_agent
@@ -65,6 +64,9 @@ def create_agent():
 
 @agent_bp.route('/agent/db/get_all', methods=['GET'])
 def get_all_agents():
+  assistant_session = get_assistant_session()
+  if not assistant_session:
+    return jsonify({'error': 'Invalid assistant session.'}), 401
   agents = retrieve_all_agents()
   if agents is None:
     return jsonify({'error': 'An error occurred while retrieving agents.'}), 400

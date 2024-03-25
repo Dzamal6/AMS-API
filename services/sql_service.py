@@ -614,9 +614,7 @@ def get_agent_data(agentId):
           for column in agent.__table__.columns
       }
 
-      agent_dict['documents'] = [{
-          "document_id": document.id,
-      } for document in agent.documents]
+      return agent_dict
   except Exception as e:
     print(f"An error occurred: {e}")
     return None
