@@ -1,13 +1,5 @@
 from flask import Blueprint, jsonify, request
-from openai import OpenAI
 from config import OPENAI_CLIENT as client
-import time
-import tiktoken
-from database.database import session_scope
-import uuid
-from database.models import Document
-from functions import validate_authorization_key
-from services.sql_service import get_agent_data
 from services.openai_service import chat_ta, create_agent, delete_agent
 
 openai_bp = Blueprint("openai", __name__)

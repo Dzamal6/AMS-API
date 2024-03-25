@@ -13,3 +13,4 @@ sqlalchemy>=2.0.27,<3.0.0
 openai>=1.13.3,<2.0.0
 psycopg2-binary>=2.8,<3.0
 tiktoken>=0.6.0,<1.1.1
+pymupdf>=1.24.0,<2.0.0
