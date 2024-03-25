@@ -51,7 +51,7 @@ def create_agent():
   }
   assistant_ids = []
   assistant_ids.append(assistant_id)
-  upload = upload_agent_metadata(agent_details, assistant_ids, file_ids)
+  upload = upload_agent_metadata(agent_details, assistant_ids)
 
   if upload is None:
     return jsonify({'error': 'An error occurred while uploading the agent.'}), 400

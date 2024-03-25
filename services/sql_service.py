@@ -620,9 +620,9 @@ def get_agent_data(agentId):
     return None
 
 
+# TODO: document_ids: list[str]
 def upload_agent_metadata(agent_details: dict[str, str],
-                          assistant_ids: list[str], 
-                          document_ids: (list[str] | None)=None):
+                          assistant_ids: list[str]):
   try:
     with session_scope() as session:
       new_agent = Agent(id=uuid.uuid4(),
@@ -634,10 +634,10 @@ def upload_agent_metadata(agent_details: dict[str, str],
           Assistant.id.in_(assistant_ids)).all()
       new_agent.assistants = assistants
 
-      if document_ids:
-        documents = session.query(Document).filter(
-            Document.id.in_(document_ids)).all()
-        new_agent.documents = documents
+      # if document_ids:
+      #   documents = session.query(Document).filter(
+      #       Document.id.in_(document_ids)).all()
+      #   new_agent.documents = documents
 
       session.add(new_agent)
       session.commit()
