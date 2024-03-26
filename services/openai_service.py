@@ -71,7 +71,7 @@ def chat_ta(assistant_id, thread_id, user_input):
 
 
 def create_agent(agent_id):
-  file = f'agents/{agent_id}.json'
+  file = f'/tmp/agents/{agent_id}.json'
 
   agent_data = get_agent_data(agent_id)
 
@@ -98,8 +98,8 @@ def create_agent(agent_id):
                                               # ]
                                              )
 
-    if not os.path.exists('agents'):
-      os.makedirs('agents')
+    if not os.path.exists('/tmp/agents'):
+      os.makedirs('/tmp/agents')
 
     with open(file, 'w') as file:
       json.dump({'agent_id': agent.id}, file)
@@ -116,7 +116,7 @@ def delete_agent(agent_id: str):
   if not agent_data or agent_data is None:
     return None
 
-  path = f'agents/{agent_id}.json'
+  path = f'/tmp/agents/{agent_id}.json'
 
   if not os.path.exists(path):
     return None
