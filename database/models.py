@@ -111,6 +111,7 @@ class Document(Base):
   __tablename__ = "documents"
   id = Column(UUID(as_uuid=True), primary_key=True, index=True)
   name = Column(String)
+  content = Column(LargeBinary)
   content_hash = Column(String(64), unique=True)
   agents = relationship("Agent",
                         secondary='agent_file',

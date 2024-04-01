@@ -9,6 +9,8 @@ from functions import hash_password
 from werkzeug.utils import secure_filename
 import os
 import hashlib
+import io
+from typing import cast
 
 
 def get_all_transcripts():
@@ -185,7 +187,8 @@ def get_assistant_by_id(assistant_id):
             'Name': assistant.name,
             'Created': assistant.created,
             'Token': assistant.token,
-            'ProjectId': assistant.projectID
+            'ProjectId': assistant.projectID,
+            'VersionId': assistant.vID,
         }
       else:
         return None
@@ -513,34 +516,45 @@ def update_user(user_id,
     print(f"An error occurred: {e}")
     return None
 
-
-def upload_files_metadata(files):
+# TODO: files already included in the db need to be able to receive new agent relationships
+def upload_files(files):
   responses = []
+  files_with_ids = {
+    str(uuid.uuid4()): file
+    for file in files
+  }
   try:
     with session_scope() as session:
       file_data = []
-      for file_id, doc in files.items():
+      for file_id, doc in files_with_ids.items():
         doc_content = doc.read()
         doc.seek(0)
         doc_hash = hashlib.sha256(doc_content).hexdigest()
-        file_data.append((doc, file_id, doc.filename, doc_hash))
+        file_data.append((doc, file_id, doc.filename, doc_hash, doc_content))
 
       hashes = [f[3] for f in file_data]
       existing_docs = session.query(Document).filter(
           Document.content_hash.in_(hashes)).all()
-      existing_hashes = {doc.content_hash for doc in existing_docs}
+      existing_hashes = {doc.content_hash: doc for doc in existing_docs}
 
-      for doc, file_id, filename, doc_hash in file_data:
+      for doc, file_id, filename, doc_hash, doc_content in file_data:
         if doc_hash in existing_hashes:
-          responses.append(('error', {
-              'error':
-              f'Duplicate document found for file {file_id}.',
-              "Id": file_id,
-              "Content_Hash": doc_hash
-          }))
-          continue
+            existing_doc = existing_hashes[doc_hash]
+            print(f"Duplicate found, including existing file in response: {existing_doc.id}")
+            responses.append(('success', {
+                'message': f'Duplicate document found for file {file_id}, including existing file.',
+                "Id": existing_doc.id,
+                "Name": existing_doc.name,
+                "Content_hash": existing_doc.content_hash,
+                "Created": existing_doc.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
+                "LastModified": existing_doc.last_modified.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
+            }))
+            continue
 
-        document = Document(id=file_id, name=filename, content_hash=doc_hash)
+        document = Document(id=file_id, 
+                            name=filename, 
+                            content_hash=doc_hash, 
+                            content=doc_content)
         session.add(document)
         session.commit()
 
@@ -602,6 +616,45 @@ def delete_doc(docId):
     return None
 
 
+def get_file(docId):
+  try:
+    with session_scope() as session:
+      result = session.query(Document).filter_by(id=docId).first()
+      if result:
+        return {
+          "Id":str(result.id),
+          "Name":result.name,
+          "Content_Hash":result.content_hash,
+          "Content": result.content,
+          "Created":result.created,
+          "LastModified":result.last_modified
+        }
+      else:
+        print(f"Document with ID {docId} not found")
+        return None
+  except Exception as e:
+    print(f"An error occurred: {e}")
+    return None
+
+def get_filesIO_by_id(docIds):
+  try:
+    with session_scope() as session:
+      result = session.query(Document).filter(Document.id.in_(docIds)).all()
+      if result:
+        blobs = []
+        for file in result:
+          content_bytes = cast(bytes, file.content)
+          blobs.append(io.BytesIO(content_bytes))
+
+        return blobs
+      else:
+        print(f'Files with ids {docIds} not found')
+        return None
+        
+  except Exception as e:
+    print(f"An error occurred: {e}")
+    return None
+
 def get_agent_data(agentId):
   try:
     with session_scope() as session:
@@ -609,9 +662,19 @@ def get_agent_data(agentId):
       if not agent:
         return None
 
+      blobs = []
+      for file in agent.documents:
+        content_bytes = cast(bytes, file.content)
+        blobs.append(io.BytesIO(content_bytes))
+
       agent_dict = {
-          column.name: getattr(agent, column.name)
-          for column in agent.__table__.columns
+        "Id": agent.id,
+        "Name": agent.name,
+        "Instructions": agent.system_prompt,
+        "Model": agent.model,
+        "Documents_IO": blobs,
+        "Created": agent.created,
+        "LastModified": agent.last_modified,
       }
 
       return agent_dict
@@ -620,9 +683,8 @@ def get_agent_data(agentId):
     return None
 
 
-# TODO: document_ids: list[str]
 def upload_agent_metadata(agent_details: dict[str, str],
-                          assistant_ids: list[str]):
+                          assistant_ids: list[str], document_ids: list[str]):
   try:
     with session_scope() as session:
       new_agent = Agent(id=uuid.uuid4(),
@@ -634,10 +696,10 @@ def upload_agent_metadata(agent_details: dict[str, str],
           Assistant.id.in_(assistant_ids)).all()
       new_agent.assistants = assistants
 
-      # if document_ids:
-      #   documents = session.query(Document).filter(
-      #       Document.id.in_(document_ids)).all()
-      #   new_agent.documents = documents
+      if document_ids is not []:
+        documents = session.query(Document).filter(
+            Document.id.in_(document_ids)).all()
+        new_agent.documents = documents
 
       session.add(new_agent)
       session.commit()
@@ -648,6 +710,7 @@ def upload_agent_metadata(agent_details: dict[str, str],
           "Model": new_agent.model,
           "Instructions": new_agent.system_prompt,
           "Description": new_agent.description,
+          "Documents": [{"Id": str(doc.id), "Name": doc.name} for doc in new_agent.documents],
           "Created": new_agent.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
           "LastModified": new_agent.last_modified.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
       }
@@ -662,13 +725,13 @@ def retrieve_all_agents():
     with session_scope() as session:
       agents = session.query(Agent).all()
 
-      # TODO: files 
       return [{
         "Id": agent.id,
         "Name": agent.name,
         "Model": agent.model,
         "Instructions": agent.system_prompt,
         "Description": agent.description,
+        "Documents": [{"Id": str(doc.id), "Name": doc.name} for doc in agent.documents],
         "Created": agent.created,
         "LastModified": agent.last_modified
       } for agent in agents]
@@ -694,12 +757,17 @@ def delete_agent(agent_id):
     print(f"An error occurred: {e}")
     return None
 
-def update_agent(agent_id, name, description, instructions, model):
+def update_agent(agent_id, name, description, instructions, model, document_ids):
   try:
     with session_scope() as session:
       result = session.query(Agent).filter_by(id=agent_id).first()
       if not result:
         return None
+
+      if document_ids is not []:
+        documents = session.query(Document).filter(
+            Document.id.in_(document_ids)).all()
+        result.documents = documents
 
       result.name = name
       result.description = description
@@ -712,6 +780,7 @@ def update_agent(agent_id, name, description, instructions, model):
         "Description": result.description,
         "Instructions": result.system_prompt,
         "Model": result.model,
+        "Documents": [{"Id": str(doc.id), "Name": doc.name} for doc in result.documents],
         "Created": result.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
         "LastModified": result.last_modified.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
       }

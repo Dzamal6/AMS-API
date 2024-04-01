@@ -15,9 +15,11 @@ def check_assistant_session(app: Flask, session):
     return False
 
 def check_session_validation():
-  exempt_endpoints = ['users.login_route', 'users.register_route', 'users.logout_route', 'openai.initialize', 'openai.chat']
+  exempt_endpoints = ['users.login_route', 'users.register_route', 'users.logout_route',
+                      'openai.initialize', 'openai.openai_chat']
   if request.method == "OPTIONS":
     return
+
   if request.endpoint not in exempt_endpoints:
     serializer = user_session_serializer
     session = request.cookies.get('user_session')

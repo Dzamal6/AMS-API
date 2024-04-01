@@ -1,7 +1,6 @@
 from flask import Blueprint, request, jsonify
 from config import OPENAI_CLIENT as client
-from services.sql_service import upload_agent_metadata, retrieve_all_agents, delete_agent, update_agent
-from services.document_service import upload_files
+from services.sql_service import upload_agent_metadata, retrieve_all_agents, delete_agent, update_agent, upload_files
 from functions import get_assistant_session
 
 
@@ -9,12 +8,15 @@ agent_bp = Blueprint('agent', __name__)
 
 @agent_bp.route('/agent/db/create', methods=['POST'])
 def create_agent():
-  name = request.json.get('name')
+  name = request.form.get('name')
   files = request.files.getlist('file')
-  description = request.json.get('description')
-  instructions = request.json.get('instructions')
-  model = request.json.get('model')
+  file_ids = request.form.getlist('file_ids')
+  description = request.form.get('description')
+  instructions = request.form.get('instructions')
+  model = request.form.get('model')
   assistant_session = get_assistant_session()
+
+  print(files)
 
   if assistant_session is None or not assistant_session:
     return jsonify({'error': 'Invalid assistant session.'}), 400
@@ -22,27 +24,18 @@ def create_agent():
     return jsonify({'error': 'Missing required fields.'})
     
   assistant_id = str(assistant_session['Id'])
-  file_ids = None
+  
+  if not file_ids:
+    file_ids = []
   
   if files:
     uploaded_files = upload_files(files)
     print(uploaded_files)
   
-    stripped_responses = []
     for status, response in uploaded_files:
-        response.pop('status', None)
-        response.pop('error', None)
-        stripped_responses.append(response)
-  
-    if any(status == 'error' for status, response in uploaded_files):
-      return jsonify({
-          "message": "Some or all files failed to upload.",
-          "details": stripped_responses
-      }), 400
-  
-  
-    file_ids = [file['Id'] for file in uploaded_files]
-
+      if status == 'success' and response['Id'] not in file_ids:
+        file_ids.append(response['Id'])
+        
   agent_details = {
     "name": name,
     "system_prompt": instructions,
@@ -51,7 +44,7 @@ def create_agent():
   }
   assistant_ids = []
   assistant_ids.append(assistant_id)
-  upload = upload_agent_metadata(agent_details, assistant_ids)
+  upload = upload_agent_metadata(agent_details, assistant_ids, file_ids)
 
   if upload is None:
     return jsonify({'error': 'An error occurred while uploading the agent.'}), 400
@@ -90,17 +83,29 @@ def delete_agent_route():
 
 @agent_bp.route('/agent/db/update', methods=['POST'])
 def update_agent_route():
-  agent_id = request.json.get('agent_id')
-  name = request.json.get('name')
+  agent_id = request.form.get('agent_id')
+  name = request.form.get('name')
   files = request.files.getlist('file')
-  description = request.json.get('description')
-  instructions = request.json.get('instructions')
-  model = request.json.get('model')
+  file_ids = request.form.getlist('file_ids')
+  description = request.form.get('description')
+  instructions = request.form.get('instructions')
+  model = request.form.get('model')
 
   if not agent_id or not name and not description and not instructions and not model:
     return jsonify({'error': 'Missing required fields.'}), 400
 
-  update = update_agent(agent_id, name, description, instructions, model)
+  if not file_ids:
+    file_ids = []
+
+  if files:
+    uploaded_files = upload_files(files)
+    print(uploaded_files)
+
+    for status, response in uploaded_files:
+      if status == 'success' and response['Id'] not in file_ids:
+        file_ids.append(response['Id'])
+
+  update = update_agent(agent_id, name, description, instructions, model, file_ids)
 
   if update is None:
     return jsonify({'error': 'An error occurred while updating the agent.'}), 400

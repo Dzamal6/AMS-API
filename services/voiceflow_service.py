@@ -8,7 +8,7 @@ from functions import transform_transcript_names
 
 DIALOG_HEADERS = {
   "accept": "application/json",
-  "versionID": f'{VERSION_ID}',
+  "versionID": f'{VERSION_ID}', # VersionID needs to be fetched from db, not env
   "content-type": "application/json",
   "Authorization": f"Bearer {DIALOG_API_KEY}"
 }

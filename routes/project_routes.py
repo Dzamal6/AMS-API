@@ -2,7 +2,7 @@ from flask import Blueprint, request, jsonify, make_response, current_app
 import requests
 from functions import decrypt_token, encrypt_token, roles_required, check_assistant_permission, get_user_info, check_user_projects
 from services.sql_service import add_assistant, delete_assistant, get_all_assistants, get_assistant_by_id
-from config import AIRTABLE_ENDPOINT, HEADERS, FERNET_KEY, assistant_session_serializer
+from config import FERNET_KEY, assistant_session_serializer
 
 project_bp = Blueprint('project', __name__)
 
@@ -21,6 +21,7 @@ def set_project():
     token = serializer.dumps({
         'token': Tok,
         'project_id': assistant['ProjectId'],
+        'version_id': assistant['VersionId'],
         'Id': str(assistant['Id'])
     })
     print('Assistant session token set.')

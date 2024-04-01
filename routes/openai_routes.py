@@ -22,11 +22,11 @@ def initialize():
 @openai_bp.route('/openai/delete_agent', methods=['POST'])
 def delete_agent_route():
   agent_id = request.json.get('agent_id')
-  print(f"Deleting assistant with ID: {agent_id}")
+  print(f"Deleting agent with ID: {agent_id}")
   delete = delete_agent(agent_id)
 
   if delete is None:
-    print(f"Agent with ID {agent_id} could not be deleted.")
+    print(f"(OpenAI) Agent with ID {agent_id} could not be deleted.")
     return jsonify({'error': 'Could not delete agent.'}), 400
 
   print(f'Agent {agent_id} deleted successfully.')
@@ -41,13 +41,25 @@ def openai_chat():
   user_input = request.json.get('message')
 
   if not agent_id or not thread_id or not user_input:
+    print(f"Missing required parameters: agent_id={agent_id}, thread_id={thread_id}, user_input={user_input}")
     return jsonify({'error': 'Missing required fields.'}), 400
 
   chat = chat_ta(agent_id, thread_id, user_input)
 
   if 'error' in chat:
+    print(f"Error: {chat['error']}")
     return jsonify({'error': chat['error']}), 400
 
   return jsonify({'message': 'Retrieved response', 'response': chat['success']}), 200
+
+
+@openai_bp.route('/openai/get_models', methods=['GET'])
+def get_models():
+  models = client.models.list()
+
+  if not models or models is None:
+    return jsonify({'error': 'Could not retrieve models.'}), 400
+
+  return jsonify({'models': [model.id for model in models.data]}), 200
 
   

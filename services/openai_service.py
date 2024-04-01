@@ -71,37 +71,46 @@ def chat_ta(assistant_id, thread_id, user_input):
 
 
 def create_agent(agent_id):
-  file = f'/tmp/agents/{agent_id}.json'
+  path = f'/tmp/agents/{agent_id}.json'
 
   agent_data = get_agent_data(agent_id)
+
+  print(f"__________________________Agent data: {agent_data}________________________________________")
 
   if not agent_data or agent_data is None:
     return None
 
-  if os.path.exists(file):
-    with open(file, 'r') as file:
+  if os.path.exists(path):
+    with open(path, 'r') as file:
       agent_details = json.load(file)
       agent_id = str(agent_details['agent_id'])
       print("Loaded existing assistant ID")
   else:
-    # objections_file = client.files.create(file=open(
-    #     "Files/Namitkovnik - domlouvani analyzy.docx", "rb"),
-    #                                       purpose="assistants")
-    agent = client.beta.assistants.create(name=agent_data['name'],
-                                              instructions=agent_data['system_prompt'],
-                                              model=agent_data['model']
-                                              # tools=[{
-                                              #     "type": "retrieval"
-                                              # }],
-                                              # file_ids=[
-                                              #     objections_file.id,
-                                              # ]
+    if agent_data['Documents_IO'] is not []:
+      files = agent_data['Documents_IO']
+      file_ids = []
+      for file in files:
+        upload_file = client.files.create(file=file, purpose='assistants')
+        file_ids.append(upload_file.id)
+        
+      agent = client.beta.assistants.create(name=agent_data['Name'],
+        instructions=agent_data['Instructions'],
+        model=agent_data['Model'],
+        tools=[{
+          "type": "retrieval"
+        }],
+        file_ids=file_ids
+       )
+    else:
+      agent = client.beta.assistants.create(name=agent_data['Name'],
+                                              instructions=agent_data['Instructions'],
+                                              model=agent_data['Model']
                                              )
 
     if not os.path.exists('/tmp/agents'):
       os.makedirs('/tmp/agents')
 
-    with open(file, 'w') as file:
+    with open(path, 'w') as file:
       json.dump({'agent_id': agent.id}, file)
       print('Created a new assistant and saved the ID')
 
@@ -109,13 +118,7 @@ def create_agent(agent_id):
 
   return agent_id
 
-# TODO: delete agent files
 def delete_agent(agent_id: str):
-  agent_data = get_agent_data(agent_id)
-
-  if not agent_data or agent_data is None:
-    return None
-
   path = f'/tmp/agents/{agent_id}.json'
 
   if not os.path.exists(path):
@@ -123,10 +126,10 @@ def delete_agent(agent_id: str):
 
   with open(path, 'r') as file:
     agent_details = json.load(file)
+    os.remove(path)
     response = client.beta.assistants.delete(assistant_id=agent_details['agent_id'])
 
   if response.deleted:
-    os.remove(path)
     return response.id
   else: 
     return None

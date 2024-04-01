@@ -38,12 +38,10 @@ def create_user_route():
     roles = ['Trainee']
   return add_user(username, hash_password(password), roles, assistants)
 
-# check if user is deleting self
 @users_bp.route('/delete_user', methods=['POST'])
 @roles_required('admin', 'master')
 def delete_user_route():
   data = request.get_json()
-  print(data)
   user_id = data['user_id']
   is_current_user = check_is_current_user(user_id)
   
