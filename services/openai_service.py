@@ -74,9 +74,7 @@ def create_agent(agent_id):
   path = f'/tmp/agents/{agent_id}.json'
 
   agent_data = get_agent_data(agent_id)
-
-  print(f"__________________________Agent data: {agent_data}________________________________________")
-
+  file_ids = []
   if not agent_data or agent_data is None:
     return None
 
@@ -111,7 +109,7 @@ def create_agent(agent_id):
       os.makedirs('/tmp/agents')
 
     with open(path, 'w') as file:
-      json.dump({'agent_id': agent.id}, file)
+      json.dump({'agent_id': agent.id, 'file_ids': file_ids}, file)
       print('Created a new assistant and saved the ID')
 
     agent_id = agent.id
@@ -126,10 +124,15 @@ def delete_agent(agent_id: str):
 
   with open(path, 'r') as file:
     agent_details = json.load(file)
+
+    if agent_details['file_ids'] is not []:
+      for file_id in agent_details['file_ids']:
+        client.files.delete(file_id)
+    
     os.remove(path)
     response = client.beta.assistants.delete(assistant_id=agent_details['agent_id'])
 
   if response.deleted:
     return response.id
-  else: 
+  else:
     return None
