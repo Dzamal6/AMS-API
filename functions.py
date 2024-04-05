@@ -12,6 +12,30 @@ from sqlalchemy.inspection import inspect
 import os
 
 
+def get_project_headers():
+  assistant_session = get_assistant_session()
+  token = ''
+  if assistant_session:
+    token = assistant_session['token']
+  return {
+      "accept": "application/json",
+      "content-type": "application/json",
+      "Authorization": f"{token}"
+  }
+
+
+def get_dialog_headers():
+  assistant_session = get_assistant_session()
+  token = ''
+  if assistant_session:
+    token = assistant_session['token']
+  return {
+    "accept": "application/json",
+    "versionID": 'production',
+    "content-type": "application/json",
+    "Authorization": f"{token}"
+  }
+
 def validate_authorization_key(token):
   if token != os.environ['AGENT_AUTHORIZATION_KEY']: 
     return False
