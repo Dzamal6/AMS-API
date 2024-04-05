@@ -55,9 +55,9 @@ def get_projects():
   if not user_session:
     return jsonify({'message': 'User is not authenticated.'}), 401
     
-  # projects = check_user_projects(projects, user_session['Assistants'])
+  projects = check_user_projects(projects, user_session['Assistants'])
   
-  if projects: 
+  if projects:
     return jsonify({
         'message': 'Connection was successful.',
         'assistants': projects

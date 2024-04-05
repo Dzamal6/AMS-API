@@ -20,9 +20,9 @@ config.limiter.init_app(app)
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
 logging.getLogger('sqlalchemy.engine').setLevel(logging.DEBUG)
 
-# Base.metadata.create_all(engine)
-# seed_data()
-# upload_documents()
+Base.metadata.create_all(engine)
+seed_data()
+upload_documents()
 
 app.before_request(check_session_validation)
 

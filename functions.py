@@ -49,9 +49,8 @@ def model_to_dict(model, include_relationships=False):
 
 def check_user_projects(projects, user_projects):
   out_projects = []
-  print(f'projects: {projects}; user_projects: {user_projects}')
   for project in projects:
-    if project['Id'] in user_projects:
+    if project['Id'] in [proj['Id'] for proj in user_projects]:
       out_projects.append(project)
   return out_projects
 
