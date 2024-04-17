@@ -14,6 +14,12 @@ from typing import cast
 
 
 def get_all_transcripts():
+  """
+  Retrieves all transcripts from the database.
+
+  Returns:
+      list of dict or None: A list of dictionaries representing the transcript data, or None if no transcripts are found or an error occurs.
+  """
   try:
     with session_scope() as session:
       transcripts = session.query(Transcript).all()
@@ -50,6 +56,18 @@ def get_all_transcripts():
 
 def create_transcript(transcript_id: str, session_id: str, user_id: str,
                       username: str):
+  """
+  Creates a new transcript record in the database.
+
+  Parameters:
+      transcript_id (str): The unique identifier for the transcript.
+      session_id (str): The session ID associated with the transcript.
+      user_id (str): The user ID associated with the transcript.
+      username (str): The username associated with the transcript.
+
+  Returns:
+      dict or None: A dictionary containing the newly created transcript's ID, or None if the creation fails.
+  """
   try:
     with session_scope() as session:
       transcript = Transcript(id=uuid.uuid4(),
@@ -73,6 +91,12 @@ def create_transcript(transcript_id: str, session_id: str, user_id: str,
 
 
 def get_all_chat_sessions():
+  """
+  Retrieves all chat sessions from the database.
+
+  Returns:
+      list of dict or None: A list of dictionaries representing the chat session data, or None if no chat sessions are found or an error occurs.
+  """
   try:
     with session_scope() as session:
       chat_sessions_query = session.query(ChatSession).all()
@@ -102,6 +126,15 @@ def get_all_chat_sessions():
 
 
 def remove_chat_session(sessionID: str):
+  """
+  Removes a specific chat session from the database based on the session ID.
+
+  Parameters:
+      sessionID (str): The unique identifier for the chat session to be deleted.
+
+  Returns:
+      str or None: The session ID of the deleted chat session if successful, None otherwise.
+  """
   try:
     uuid.UUID(sessionID)
   except ValueError:
@@ -131,6 +164,16 @@ def remove_chat_session(sessionID: str):
 
 
 def get_user_chat_sessions(user_id: str, assistant_id: str):
+  """
+  Retrieves chat sessions for a specific user and assistant from the database.
+
+  Parameters:
+      user_id (str): The user's ID.
+      assistant_id (str): The assistant's ID.
+
+  Returns:
+      list of dict or None: A list of dictionaries representing the user's chat sessions, or None if an error occurs.
+  """
   try:
     with session_scope() as session:
       query_sessions = session.query(ChatSession).filter(
@@ -158,6 +201,16 @@ def get_user_chat_sessions(user_id: str, assistant_id: str):
 
 
 def create_chat_session(user_id: str, assistant_id: str):
+  """
+  Creates a new chat session in the database.
+
+  Parameters:
+      user_id (str): The ID of the user involved in the chat session.
+      assistant_id (str): The ID of the assistant involved in the chat session.
+
+  Returns:
+      dict or None: A dictionary containing the newly created chat session's ID, or None if the creation fails.
+  """
   try:
     with session_scope() as session:
       chat_session = ChatSession(id=uuid.uuid4(),
@@ -178,6 +231,15 @@ def create_chat_session(user_id: str, assistant_id: str):
 
 
 def get_assistant_by_id(assistant_id):
+  """
+  Retrieves assistant details by assistant ID.
+
+  Parameters:
+      assistant_id (str): The unique identifier for the assistant.
+
+  Returns:
+      dict or None: A dictionary containing the assistant's details if found, None otherwise.
+  """
   try:
     with session_scope() as session:
       assistant = session.query(Assistant).filter_by(id=assistant_id).first()
@@ -203,6 +265,18 @@ def get_assistant_by_id(assistant_id):
 
 
 def add_user(username, password, roles, assistants):
+  """
+  Adds a new user with specified roles and assistants to the database.
+
+  Parameters:
+      username (str): The username for the new user.
+      password (str): The password for the new user.
+      roles (list of str): A list of role IDs that the user will be associated with.
+      assistants (list of str): A list of assistant IDs that the user will be associated with.
+
+  Returns:
+      JSON or None: A JSON object containing the registration details and success message, or an error message if the registration fails.
+  """
   id = str(uuid.uuid4())
 
   try:
@@ -246,6 +320,15 @@ def add_user(username, password, roles, assistants):
 
 
 def remove_user(user_id):
+  """
+  Removes a user from the database based on user ID.
+
+  Parameters:
+      user_id (str): The unique identifier of the user to be removed.
+
+  Returns:
+      JSON or None: A JSON object containing the success message and user ID, or an error message if the user is not found or another error occurs.
+  """
   try:
     with session_scope() as session:
       user = session.query(User).filter(User.id == user_id).one()
@@ -267,6 +350,15 @@ def remove_user(user_id):
 
 
 def check_user_exists(user_id):
+  """
+  Checks if a user exists in the database based on the user ID.
+
+  Parameters:
+      user_id (str): The unique identifier of the user to be checked.
+
+  Returns:
+      bool: True if the user exists, False otherwise.
+  """
   try:
     with session_scope() as session:
       result = session.query(User).filter_by(id=user_id).first()
@@ -277,6 +369,12 @@ def check_user_exists(user_id):
 
 
 def get_all_roles():
+  """
+  Retrieves all roles from the database.
+
+  Returns:
+      list of dict or None: A list of dictionaries representing all roles, or None if an error occurs.
+  """
   try:
     with session_scope() as session:
       roles_query = session.query(Role).all()
@@ -288,6 +386,15 @@ def get_all_roles():
 
 
 def get_user_roles(user_roles_ids):
+  """
+  Retrieves specific roles based on a list of role IDs.
+
+  Parameters:
+      user_roles_ids (list of str): A list of role IDs.
+
+  Returns:
+      list of dict or None: A list of dictionaries representing the roles, or None if an error occurs.
+  """
   try:
     with session_scope() as session:
       roles = session.query(Role).filter(Role.id.in_(user_roles_ids)).all()
@@ -299,6 +406,12 @@ def get_user_roles(user_roles_ids):
 
 
 def get_all_assistants():
+  """
+  Retrieves all assistants from the database.
+
+  Returns:
+      list of dict or None: A list of dictionaries representing all assistants, or None if an error occurs.
+  """
   try:
     with session_scope() as session:
       assistants_query = session.query(Assistant).all()
@@ -317,6 +430,15 @@ def get_all_assistants():
 
 
 def get_user_assistants(user_assistants_ids):
+  """
+  Retrieves specific assistants based on a list of assistant IDs.
+
+  Parameters:
+      user_assistants_ids (list of str): A list of assistant IDs.
+
+  Returns:
+      list of dict or None: A list of dictionaries representing the assistants, or None if an error occurs.
+  """
   try:
     with session_scope() as session:
       assistants = session.query(Assistant).filter(
@@ -332,6 +454,12 @@ def get_user_assistants(user_assistants_ids):
 
 
 def get_all_users():
+  """
+  Retrieves all users from the database along with their associated roles and assistants.
+
+  Returns:
+      list of dict or None: A list of dictionaries representing all users, their roles, and assistants, or None if an error occurs.
+  """
   try:
     with session_scope() as session:
       users = session.query(User).all()
@@ -384,6 +512,15 @@ def get_all_users():
 
 
 def get_user(username):
+  """
+  Retrieves a user by username from the database.
+
+  Parameters:
+      username (str): The username of the user to be retrieved.
+
+  Returns:
+      dict or None: A dictionary containing the user's details if found, or an empty dictionary if the user is not found, or None if an error occurs.
+  """
   try:
     with session_scope() as session:
       user = session.query(User).filter(User.username == username).first()
@@ -416,6 +553,18 @@ def get_user(username):
 
 
 def add_assistant(project_token, project_name, project_vID, project_id):
+  """
+  Adds a new Voiceflow assistant's metadata to the database.
+
+  Parameters:
+      project_token (str): The token associated with the project for the new assistant.
+      project_name (str): The name of the new assistant.
+      project_vID (str): The version ID of the project.
+      project_id (str): The project ID of the new assistant.
+
+  Returns:
+      JSON or None: A JSON object containing the success message and assistant details, or an error message if an error occurs.
+  """
   try:
     with session_scope() as session:
       existing_assistant = session.query(Assistant).filter(
@@ -453,6 +602,15 @@ def add_assistant(project_token, project_name, project_vID, project_id):
 
 
 def delete_assistant(project_name):
+  """
+  Deletes an assistant from the database based on the assistant's name.
+
+  Parameters:
+      project_name (str): The name of the assistant to be deleted.
+
+  Returns:
+      bool: True if the deletion was successful, False otherwise.
+  """
   try:
     with session_scope() as session:
       result = session.query(Assistant).filter_by(name=project_name).first()
@@ -475,6 +633,19 @@ def update_user(user_id,
                 password=None,
                 roles=None,
                 assistants=None):
+  """
+  Updates a user's details in the database.
+
+  Parameters:
+      user_id (str): The unique identifier of the user to be updated.
+      username (str, optional): The new username for the user.
+      password (str, optional): The new password for the user.
+      roles (list of str, optional): A list of new role IDs to be associated with the user.
+      assistants (list of str, optional): A list of new assistant IDs to be associated with the user.
+
+  Returns:
+      dict or None: A dictionary containing the updated user's details if the update is successful, or None if the user is not found or an error occurs.
+  """
 
   try:
     with session_scope() as session:
@@ -518,6 +689,15 @@ def update_user(user_id,
 
 # TODO: files already included in the db need to be able to receive new agent relationships
 def upload_files(files):
+  """
+  Uploads files to the database, checking for duplicates based on file content hash.
+
+  Parameters:
+      files (list): A list of file objects to be uploaded.
+
+  Returns:
+      list of tuple: A list containing the results for each file upload attempt. Each tuple contains a status ('success' or 'error') and a dictionary with relevant information.
+  """
   responses = []
   files_with_ids = {
     str(uuid.uuid4()): file
@@ -581,6 +761,12 @@ def upload_files(files):
 
 
 def get_all_files():
+  """
+  Retrieves all files from the database.
+
+  Returns:
+      list of dict or None: A list of dictionaries representing all stored files, or None if an error occurs.
+  """
   try:
     with session_scope() as session:
       docs = session.query(Document).all()
@@ -600,6 +786,15 @@ def get_all_files():
 
 
 def delete_doc(docId):
+  """
+  Deletes a specific document from the database based on the document's ID.
+
+  Parameters:
+      docId (str): The unique identifier of the document to be deleted.
+
+  Returns:
+      str or None: The ID of the deleted document if successful, None otherwise.
+  """
   try:
     with session_scope() as session:
       result = session.query(Document).filter_by(id=docId).first()
@@ -617,6 +812,15 @@ def delete_doc(docId):
 
 
 def get_file(docId):
+  """
+  Retrieves a specific document's details from the database based on its ID.
+
+  Parameters:
+      docId (str): The unique identifier of the document to retrieve.
+
+  Returns:
+      dict or None: A dictionary containing the document's details if found, None otherwise.
+  """
   try:
     with session_scope() as session:
       result = session.query(Document).filter_by(id=docId).first()
@@ -637,6 +841,15 @@ def get_file(docId):
     return None
 
 def get_filesIO_by_id(docIds):
+  """
+  Retrieves file content as IO streams for specified document IDs.
+
+  Parameters:
+      docIds (list of str): A list of document IDs for which to retrieve content.
+
+  Returns:
+      list of io.BytesIO or None: A list of io.BytesIO streams containing the file content, or None if no documents are found or an error occurs.
+  """
   try:
     with session_scope() as session:
       result = session.query(Document).filter(Document.id.in_(docIds)).all()
@@ -656,6 +869,15 @@ def get_filesIO_by_id(docIds):
     return None
 
 def get_agent_data(agentId):
+  """
+  Retrieves detailed information and associated documents for a specific agent based on the agent's ID.
+
+  Parameters:
+      agentId (str): The unique identifier of the agent to retrieve data for.
+
+  Returns:
+      dict or None: A dictionary containing the agent's details and documents if found, None otherwise.
+  """
   try:
     with session_scope() as session:
       agent = session.query(Agent).filter_by(id=agentId).first()
@@ -685,6 +907,17 @@ def get_agent_data(agentId):
 
 def upload_agent_metadata(agent_details: dict[str, str],
                           assistant_ids: list[str], document_ids: list[str]):
+  """
+  Creates a new agent in the database with specified details and associations to assistants and documents.
+
+  Parameters:
+      agent_details (dict[str, str]): A dictionary containing the agent's details such as name, system prompt, and description.
+      assistant_ids (list of str): A list of assistant IDs to associate with the agent.
+      document_ids (list of str): A list of document IDs to associate with the agent.
+
+  Returns:
+      dict or None: A dictionary containing the newly created agent's details, or None if an error occurs.
+  """
   try:
     with session_scope() as session:
       new_agent = Agent(id=uuid.uuid4(),
@@ -721,6 +954,12 @@ def upload_agent_metadata(agent_details: dict[str, str],
 
 
 def retrieve_all_agents():
+  """
+  Retrieves all agents from the database.
+
+  Returns:
+      list of dict or None: A list of dictionaries representing all agents, or None if an error occurs.
+  """
   try:
     with session_scope() as session:
       agents = session.query(Agent).all()
@@ -741,6 +980,15 @@ def retrieve_all_agents():
     return None
 
 def delete_agent(agent_id):
+  """
+  Deletes a specific agent from the database based on the agent's ID.
+
+  Parameters:
+      agent_id (str): The unique identifier of the agent to be deleted.
+
+  Returns:
+      str or None: The ID of the deleted agent if successful, None otherwise.
+  """
   try:
     with session_scope() as session:
       result = session.query(Agent).filter_by(id=agent_id).first()
@@ -758,6 +1006,20 @@ def delete_agent(agent_id):
     return None
 
 def update_agent(agent_id, name, description, instructions, model, document_ids):
+  """
+  Updates an existing agent's details in the database.
+
+  Parameters:
+      agent_id (str): The unique identifier of the agent to be updated.
+      name (str): The new name for the agent.
+      description (str): A new description of the agent.
+      instructions (str): Updated system instructions for the agent.
+      model (str): The model identifier for the agent.
+      document_ids (list of str): A list of new document IDs to associate with the agent.
+
+  Returns:
+      dict or None: A dictionary containing the updated agent's details if successful, None otherwise.
+  """
   try:
     with session_scope() as session:
       result = session.query(Agent).filter_by(id=agent_id).first()

@@ -13,6 +13,12 @@ import os
 
 
 def get_project_headers():
+  """
+  Retrieves HTTP headers necessary for making API requests to a project-specific endpoint, including authorization token.
+
+  Returns:
+      dict: Headers including Content-Type, Accept, and Authorization populated with the user's token.
+  """
   assistant_session = get_assistant_session()
   token = ''
   if assistant_session:
@@ -25,6 +31,12 @@ def get_project_headers():
 
 
 def get_dialog_headers():
+  """
+  Retrieves HTTP headers necessary for interacting with dialog endpoints, including authorization token and version information.
+
+  Returns:
+      dict: Headers including Content-Type, Accept, VersionID set to 'production', and Authorization populated with the user's token.
+  """
   assistant_session = get_assistant_session()
   token = ''
   if assistant_session:
@@ -37,11 +49,30 @@ def get_dialog_headers():
   }
 
 def validate_authorization_key(token):
+  """
+  Validates the provided authorization token against the environment's expected authorization key.
+
+  Parameters:
+      token (str): The token to validate.
+
+  Returns:
+      bool: True if the token matches the environment's authorization key, False otherwise.
+  """
   if token != os.environ['AGENT_AUTHORIZATION_KEY']: 
     return False
   return True
 
 def transform_transcript_names(vf_transcripts, sql_transcripts):
+  """
+  Matches Voiceflow transcripts with SQL transcripts by session ID and updates the name in Voiceflow transcripts to the username from SQL transcripts.
+
+  Parameters:
+      vf_transcripts (list of dict): List of transcripts from Voiceflow.
+      sql_transcripts (list of dict): List of transcripts from SQL database.
+
+  Returns:
+      list of dict: The updated list of Voiceflow transcripts with usernames from the SQL database.
+  """
   # TODO: If an sql_transcript is not found in vf_transcripts, delete the transcript
   
   for transcript in vf_transcripts:
@@ -53,6 +84,16 @@ def transform_transcript_names(vf_transcripts, sql_transcripts):
   return vf_transcripts
 
 def model_to_dict(model, include_relationships=False):
+  """
+  Converts an SQLAlchemy model instance into a dictionary, optionally including related objects.
+
+  Parameters:
+      model (SQLAlchemy Model): The model instance to convert.
+      include_relationships (bool): If True, includes the data from related objects.
+
+  Returns:
+      dict: A dictionary representation of the model instance.
+  """
   model_dict = {c.key: getattr(model, c.key)
                 for c in inspect(model).mapper.column_attrs}
   
@@ -72,6 +113,16 @@ def model_to_dict(model, include_relationships=False):
   return model_dict
 
 def check_user_projects(projects, user_projects):
+  """
+  Filters a list of projects to include only those that exist in a user's project list.
+
+  Parameters:
+      projects (list of dict): List of all projects.
+      user_projects (list of dict): List of the user's projects.
+
+  Returns:
+      list of dict: Filtered list of projects that are included in the user's project list.
+  """
   out_projects = []
   for project in projects:
     if project['Id'] in [proj['Id'] for proj in user_projects]:
@@ -79,6 +130,15 @@ def check_user_projects(projects, user_projects):
   return out_projects
 
 def check_assistant_permission(projectId):
+  """
+  Checks if the current user has permission to access a specific project based on their assistants' IDs.
+
+  Parameters:
+      projectId (str): The project ID to check permissions for.
+
+  Returns:
+      bool: True if the user has permission, False otherwise.
+  """
   user_info = get_user_info()
   
   if user_info and any(a['Id'] == projectId for a in user_info['Assistants']):
@@ -86,26 +146,59 @@ def check_assistant_permission(projectId):
   return False
 
 def check_is_current_user(user_id):
+  """
+  Checks if the provided user ID matches the current user's ID.
+
+  Parameters:
+      user_id (str): The user ID to check.
+
+  Returns:
+      bool: True if the provided user ID matches the current user's ID, False otherwise.
+  """
   user_info = get_user_info()
   if user_info:
     return user_id == user_info['Id']
 
 def get_chat_session():
+  """
+  Retrieves the chat session data from cookies.
+
+  Returns:
+      any: The deserialized chat session data or None if no chat session is present in cookies.
+  """
   chat_session = request.cookies.get('chat_session')
   if chat_session:
     return chat_session_serializer.loads(chat_session)
 
 def get_user_info():
+  """
+  Retrieves the user info from cookies.
+
+  Returns:
+      dict: The deserialized user info data or None if no user session is present in cookies.
+  """
   user_session = request.cookies.get('user_session')
   if user_session:
     return user_session_serializer.loads(user_session)
 
 def get_assistant_session():
+  """
+  Retrieves the assistant session data from cookies.
+
+  Returns:
+      dict: The deserialized assistant session data or None if no assistant session is present in cookies.
+  """
   assistant_session = request.cookies.get('assistant_session')
   if assistant_session:
     return assistant_session_serializer.loads(assistant_session)
 
 def check_admin():
+  """
+  Checks if the current user has an 'admin' role.
+
+  Returns:
+      bool: True if the user is an admin, False otherwise.
+  """
   user_session = get_user_info()
   if user_session:
     print(user_session['Roles'])
@@ -113,6 +206,15 @@ def check_admin():
 
 
 def roles_required(*required_roles):
+  """
+  Decorator to check if the current user has at least one of the specified roles.
+
+  Parameters:
+      *required_roles (str): Roles required to execute the function.
+
+  Returns:
+      function: A wrapper function that either proceeds with the execution if roles match or returns an error.
+  """
 
   def decorator(f):
 
@@ -140,96 +242,56 @@ def roles_required(*required_roles):
 
 
 def hash_password(password):
+  """
+  Hashes a password using bcrypt.
+
+  Parameters:
+      password (str): The password to hash.
+
+  Returns:
+      str: The hashed password.
+  """
   hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
   return hashed.decode('utf-8')
 
 def check_password(hashed, password):
+  """
+  Checks a password against a hashed value using bcrypt.
+
+  Parameters:
+      hashed (str): The hashed password.
+      password (str): The plaintext password to check.
+
+  Returns:
+      bool: True if the password matches the hash, False otherwise.
+  """
   return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
 
 def encrypt_token(key, token):
+  """
+  Encrypts a token using Fernet symmetric encryption.
+
+  Parameters:
+      key (bytes): The key used for encryption.
+      token (str): The token to encrypt.
+
+  Returns:
+      str: The encrypted token.
+  """
   fernet = Fernet(key)
   return fernet.encrypt(token.encode()).decode()
 
 
 def decrypt_token(key, encrypted_token):
+  """
+  Decrypts a token using Fernet symmetric encryption.
+
+  Parameters:
+      key (bytes): The key used for decryption.
+      encrypted_token (str): The encrypted token to decrypt.
+
+  Returns:
+      str: The decrypted token.
+  """
   fernet = Fernet(key)
   return fernet.decrypt(encrypted_token.encode()).decode()
-
-
-def convert_to_timezone(date_str, from_tz, to_tz):
-  date = datetime.fromisoformat(date_str.rstrip('Z'))
-
-  from_zone = pytz.timezone(from_tz)
-  date = from_zone.localize(date)
-
-  to_zone = pytz.timezone(to_tz)
-  converted_date = date.astimezone(to_zone)
-
-  return converted_date.isoformat()
-
-
-def daterange(start, end):
-  for n in range(int((end - start).days) + 1):
-    yield start + timedelta(n)
-
-
-def get_date_x_days_ago_isoformat(x):
-  today_utc = datetime.utcnow()
-
-  date_x_days_ago = today_utc - timedelta(days=x)
-
-  return date_x_days_ago.strftime('%Y-%m-%dT00:00:00.000Z')
-
-
-def get_endTime_of_day(date):
-  date = datetime.strptime(date, '%Y-%m-%dT00:00:00.000Z')
-  return date.strftime('%Y-%m-%dT23:59:59.000Z')
-
-
-def fetch_data_for_type_and_date(endpoint, headers, project_id, data_type,
-                                 date):
-  payload = {
-      'query': [{
-          'name': data_type,
-          'filter': {
-              'projectID': project_id,
-              'startTime': date,
-              'endTime': get_endTime_of_day(date)
-          }
-      }]
-  }
-  response = requests.post(endpoint, json=payload, headers=headers)
-  if response.status_code == 200:
-    data = response.json()['result']
-    return {'date': date, data_type: data}
-  else:
-    print(f'Could not retrieve data for {data_type} at {date}')
-    return None
-
-
-# Needs substantial efficiency optimization => 12 month period takes >5 minutes.
-def retrieve_data(start, end, types, endpoint, headers, project_id):
-  start_date = datetime.fromisoformat(start.rstrip('Z'))
-  end_date = datetime.fromisoformat(end.rstrip('Z'))
-
-  date_list = [
-      single_date.strftime("%Y-%m-%dT%H:%M:%S.000Z")
-      for single_date in daterange(start_date, end_date)
-  ]
-
-  data_for_graph = {data_type: [] for data_type in types}
-  futures = []
-
-  with ThreadPoolExecutor(max_workers=30) as executor:
-    for data_type in types:
-      for date in date_list:
-        future = executor.submit(fetch_data_for_type_and_date, endpoint,
-                                 headers, project_id, data_type, date)
-        futures.append((future, data_type))
-
-    for future, data_type in futures:
-      result = future.result()
-      if result:
-        data_for_graph[data_type].append(result)
-
-  return data_for_graph

@@ -18,7 +18,33 @@ if current_version < required_version:
 else:
   print("OpenAI version is compatible")
 
+
 def chat_ta(assistant_id, thread_id, user_input):
+  """
+  Sends a message to an OpenAI assistant and manages the conversation within a specific thread, counting the tokens used.
+
+  Parameters:
+      assistant_id (str): The unique identifier for the AI assistant.
+      thread_id (str): The identifier for the conversation thread.
+      user_input (str): The user's message to the AI assistant.
+
+  Returns:
+      dict: A dictionary with either a 'success' key containing the assistant's response or an 'error' key with an error message.
+
+  Notes:
+      - Uses `tiktoken` library to count tokens for both the user's input and the assistant's response.
+      - Manages messages and interactions via `client.beta.threads.messages.create` and `client.beta.threads.runs.create`.
+      - Handles timeouts, returning an error if response time exceeds 55 seconds.
+
+  Examples:
+      >>> response = chat_ta('asst_abc123', 'thread_abc123', 'Hello, assistant!')
+      >>> print(response)
+      {'success': "Assistant's response text here."}
+
+      >>> response = chat_ta('asst_abc123', '', 'Hello, assistant!')
+      >>> print(response)
+      {'error': 'missing thread_id'}
+  """
   # Token Counting Input
   encoding = tiktoken.get_encoding("cl100k_base")
   encoding = tiktoken.encoding_for_model("gpt-4")
@@ -71,6 +97,30 @@ def chat_ta(assistant_id, thread_id, user_input):
 
 
 def create_agent(agent_id):
+  """
+  Creates a new agent on the OpenAI server or retrieves details of an existing agent based on the provided ID.
+
+  Parameters:
+      agent_id (str): The unique identifier for the agent, used to store or retrieve the agent's data locally.
+
+  Returns:
+      str or None: The unique identifier of the created or retrieved agent, or None if creation failed.
+
+  Raises:
+      OSError: If necessary directories or files cannot be created.
+      IOError: If there's an error in reading from or writing to the local JSON file.
+      ApiError: If there's an issue with the OpenAI client during agent creation or file upload.
+
+  Notes:
+      - Uses `client.beta.assistants.create` to create an agent with properties like name and instructions.
+      - Manages file uploads via `client.files.create` and stores agent details locally in `/tmp/agents/{agent_id}.json`.
+      - Ensures the `/tmp/agents` directory exists for storing agent data.
+
+  Example:
+      >>> agent_id = create_agent('1234')
+      >>> print(agent_id)
+      'unique-agent-id'
+  """
   path = f'/tmp/agents/{agent_id}.json'
 
   agent_data = get_agent_data(agent_id)
@@ -117,6 +167,23 @@ def create_agent(agent_id):
   return agent_id
 
 def delete_agent(agent_id: str):
+  """
+  Deletes an agent from the OpenAI server and its associated local file based on the provided agent ID.
+
+  Parameters:
+      agent_id (str): A unique identifier for the agent to be deleted.
+
+  Returns:
+      str or None: The unique identifier of the deleted agent or None if the deletion failed.
+
+  Raises:
+      OSError: If unable to delete the local file.
+      ApiError: If the OpenAI client fails to delete the agent.
+
+  Notes:
+      - Utilizes the `client.beta.assistants.delete` API call to delete the agent from the server.
+      - Checks for the agent's existence by looking for a corresponding local file.
+  """
   path = f'/tmp/agents/{agent_id}.json'
 
   if not os.path.exists(path):

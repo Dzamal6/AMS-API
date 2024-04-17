@@ -11,12 +11,53 @@ transcript_bp = Blueprint('blueprints', __name__)
 @transcript_bp.route('/get_transcripts', methods=['GET'])
 @roles_required('admin', 'master', 'worker')
 def get_transcripts():
+  """
+  Serves as a conduit to retrieve all transcripts associated with the assistant from the Voiceflow database.
+
+  URL:
+  - GET /get_transcripts
+
+  Returns:
+      JSON response (dict): A list of transcripts or an error message.
+
+  Status Codes:
+      200 OK: List of transcripts retrieved successfully.
+      400 Bad Request: An error occurred.
+      401 Unauthorized: Assistant session could not be resolved.
+
+  Notes:
+      This endpoint primarily acts as a middleman utilizing the `retrieve_transcripts` method
+      which is shared across several endpoints to standardize transcript retrieval.
+
+  Access Control:
+      Requires `Admin`, `Master`, or `Worker` roles to retrieve transcripts.
+  """
   return retrieve_transcripts()
 
 
 @transcript_bp.route('/update_transcript', methods=['POST'])
 @roles_required('admin', 'master', 'worker')
 def update_transcript():
+  """
+  Updates specific fields of a transcript in the Voiceflow database based on provided data.
+
+  URL:
+  - POST /update_transcript
+
+  Parameters:
+      data (dict): Key-value pairs representing the fields to be updated in the transcript.
+
+  Returns:
+      JSON response (dict): A message indicating the success of the update.
+
+  Status Codes:
+      200 OK: Transcript updated successfully.
+      400 Bad Request: Invalid request payload or an error occurred.
+      401 Unauthorized: Assistant session could not be resolved.
+
+  Access Control:
+      Requires `Admin`, `Master`, or `Worker` roles to execute.
+  """
   token = request.cookies.get('assistant_session')
   # transcript_id = request.json.get('transcript_id')
   data = request.json.get('data')
@@ -47,6 +88,23 @@ def update_transcript():
 
 @transcript_bp.route('/get_transcript_dialog', methods=['POST'])
 def get_transcript_dialog():
+  """
+  Retrieves dialog details from a specific transcript stored in the Voiceflow database.
+
+  URL:
+  - POST /get_transcript_dialog
+
+  Parameters:
+      transcript_id (str): The ID of the transcript from which to retrieve the dialog.
+
+  Returns:
+      JSON response (dict): The dialog object from the specified transcript or an error message.
+
+  Status Codes:
+      200 OK: Transcript dialog retrieved successfully.
+      400 Bad Request: Invalid request payload or an error occurred.
+      401 Unauthorized: Assistant session could not be resolved.
+  """
   token = request.cookies.get('assistant_session')
   transcript_id = request.json.get('transcript_id')
   checksesh = check_assistant_session(current_app, token)
@@ -72,6 +130,24 @@ def get_transcript_dialog():
 
 @transcript_bp.route('/get_user_transcripts', methods=['GET'])
 def get_user_transcripts():
+  """
+  Retrieves all transcripts related to a user and their selected assistant from the Voiceflow database.
+
+  URL:
+  - GET /get_user_transcripts
+
+  Returns:
+      JSON response (dict): A list of transcripts or an error message.
+
+  Status Codes:
+      200 OK: List of transcripts retrieved successfully.
+      400 Bad Request: Assistant could not be resolved or an error occurred.
+      401 Unauthorized: User session could not be resolved.
+
+  Notes:
+      Transcripts are fetched based on the user and assistant sessions retrieved from cookies. 
+      The list is then filtered to include only those relevant to the current user.
+  """
   user_info = get_user_info()
   assistant_session = get_assistant_session()
 
@@ -100,6 +176,28 @@ def get_user_transcripts():
 
 @transcript_bp.route('/delete_transcript', methods=['POST'])
 def delete_transcript_route():
+  """
+  Deletes a transcript and its associated metadata from both the Voiceflow and the API's internal databases.
+
+  URL:
+  - POST /delete_transcript
+
+  Parameters:
+      transcript_id (str): The ID of the transcript to delete.
+      session_id (str): The ID of the session associated with the transcript.
+
+  Returns:
+      JSON response (dict): A message indicating the success of the deletion and the ID of the deleted transcript.
+
+  Status Codes:
+      200 OK: Transcript deleted successfully.
+      400 Bad Request: Invalid request payload or an error occurred.
+      401 Unauthorized: Assistant session could not be resolved.
+
+  Notes:
+      The deletion process involves removing the transcript from the API's database using `remove_chat_session`
+      method followed by its removal from the Voiceflow database.
+  """
   token = request.cookies.get('assistant_session')
   transcript_id = request.json.get('transcript_id')
   session_id = request.json.get('session_id')

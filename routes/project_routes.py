@@ -8,6 +8,25 @@ project_bp = Blueprint('project', __name__)
 
 @project_bp.route('/set_project', methods=['POST'])
 def set_project():
+  """
+  Sets up a session for a specified Voiceflow assistant if the user is authorized, 
+  and stores relevant session data in a cookie.
+
+  URL:
+  - POST /set_project
+
+  Parameters:
+      project_id (str): The ID of the Voiceflow assistant for which the session is to be set up.
+
+  Returns:
+      JSON response (dict): A message indicating the success of the setup, along with assistant details
+                            such as `Name`, `Id`, and `Created`, or an error message.
+
+  Status Codes:
+      200 OK: Project set successfully.
+      400 Bad Request: Invalid request payload or an error occurred.
+      401 Unauthorized: User is not allowed to access the specified Voiceflow assistant.
+  """
   project_id = request.json.get('project_id')
   
   if not check_assistant_permission(project_id):
@@ -16,7 +35,7 @@ def set_project():
   assistant = get_assistant_by_id(project_id)
   
   if assistant is not None and isinstance(assistant, dict):
-    Tok = decrypt_token(FERNET_KEY, assistant['Token'])
+    Tok = decrypt_token(FERNET_KEY, assistant['Token']) # API token should be encrypted in the cookie and decrypted only when using it.
     serializer = assistant_session_serializer
     token = serializer.dumps({
         'token': Tok,
@@ -50,9 +69,26 @@ def set_project():
 
 @project_bp.route('/get_projects', methods=['GET'])
 def get_projects():
+  """
+  Retrieves a list of all the Voiceflow assistants that the user has access to from the database.
+
+  URL:
+  - GET /get_projects
+
+  Returns:
+      JSON response (dict): A list of assistants or an error message.
+
+  Status Codes:
+      200 OK: List of projects retrieved successfully.
+      400 Bad Request: Assistants could not be retrieved.
+      401 Unauthorized: User is not authenticated.
+
+  Notes:
+      User authentication is verified using the `user_session` function.
+  """
   projects = get_all_assistants()
   user_session = get_user_info()
-  if not user_session:
+  if not user_session: # <-- Likely redundant since before_request method already checks for this.
     return jsonify({'message': 'User is not authenticated.'}), 401
     
   projects = check_user_projects(projects, user_session['Assistants'])
@@ -61,7 +97,7 @@ def get_projects():
     return jsonify({
         'message': 'Connection was successful.',
         'assistants': projects
-    })
+    }), 200
   else:
     return jsonify({'message': 'Could not obtain assistants.'}), 400
   
@@ -69,6 +105,29 @@ def get_projects():
 @project_bp.route('/add_project', methods=['POST'])
 @roles_required('admin')
 def add_project():
+  """
+  Adds a Voiceflow assistant's metadata to the database after retrieving and encrypting necessary data.
+
+  URL:
+  - POST /add_project
+
+  Parameters:
+      version_id (str): The version ID of the Voiceflow assistant to add.
+      token (str): The API key of the Voiceflow assistant, which will be encrypted and stored.
+
+  Returns:
+      JSON response (dict): A message indicating whether the assistant was added successfully,
+                            along with the assistant `Name`, `Id`, and `Created` properties, or an error message.
+
+  Status Codes:
+      200 OK: Project added successfully.
+      400 Bad Request: Invalid request payload or an error occurred.
+      401 Unauthorized: User is not allowed to add assistants.
+
+  Note for use:
+      The assistant must be previously configured in Voiceflow Studio. The `version_id` is used for specific Voiceflow endpoints.
+      This endpoint requires an `Admin` role to execute.
+  """
   version_id = request.json.get('version_id')
   token = request.json.get('token')
   endpoint = f'https://api.voiceflow.com/v2/versions/{version_id}/export'
@@ -83,13 +142,32 @@ def add_project():
     return res
   else:
     return jsonify({'message':
-                    'No project exists with this information.'}), 400
+                    'No project exists with this information or an error occurred while adding the project.'}), 400
 
 
 @project_bp.route('/delete_project', methods=['POST'])
 @roles_required('admin')
 def delete_project():
-  project_name = request.json.get('project_name')
+  """
+  Deletes a specified Voiceflow assistant from the API's internal database but does not affect Voiceflow's records.
+
+  URL:
+  - POST /delete_project
+
+  Parameters:
+      project_name (str): The name of the Voiceflow assistant to delete.
+
+  Returns:
+      JSON response (dict): A message indicating whether the assistant was deleted successfully.
+
+  Status Codes:
+      200 OK: Project deleted successfully.
+      400 Bad Request: Invalid request payload or an error occurred.
+
+  Access Control:
+      Requires the `Admin` role for deleting assistants.
+  """
+  project_name = request.json.get('project_name') # TODO: change this to ID as this poses a likely conflict.
   res = delete_assistant(project_name)
   if res:
     return jsonify({'message': 'Project deleted from the database.'}), 200
