@@ -29,7 +29,7 @@ def set_project():
   """
   project_id = request.json.get('project_id')
   
-  if not check_assistant_permission(project_id):
+  if not check_admin() and not check_assistant_permission(project_id):
     return jsonify({'error': 'User does not have access to this project.'}), 401
     
   assistant = get_assistant_by_id(project_id)
