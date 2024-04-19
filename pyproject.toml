@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "python-template"
-version = "0.1.0"
-description = "API for Web Assistant Management System"
+version = "0.16.6"
+description = "API for Assistant Management System"
 authors = ["Dzamal (https://github.com/Dzamal6)"]
 
 [tool.poetry.dependencies]

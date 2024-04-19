@@ -202,7 +202,7 @@ def check_admin():
   user_session = get_user_info()
   if user_session:
     print(user_session['Roles'])
-    return 'admin' in user_session['Roles'].lower()
+    return any(role['Name'].lower() == 'admin' for role in user_session.get('Roles', []))
 
 
 def roles_required(*required_roles):

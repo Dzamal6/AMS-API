@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify, make_response, current_app
 import requests
-from functions import decrypt_token, encrypt_token, roles_required, check_assistant_permission, get_user_info, check_user_projects
+from functions import decrypt_token, encrypt_token, roles_required, check_assistant_permission, get_user_info, check_user_projects, check_admin
 from services.sql_service import add_assistant, delete_assistant, get_all_assistants, get_assistant_by_id
 from config import FERNET_KEY, assistant_session_serializer
 
@@ -82,14 +82,19 @@ def get_projects():
       200 OK: List of projects retrieved successfully.
       400 Bad Request: Assistants could not be retrieved.
       401 Unauthorized: User is not authenticated.
+      404 Not Found: No assistants found.
 
   Notes:
-      User authentication is verified using the `user_session` function.
+      User authentication is verified using the `get_user_info` function.
+      The function checks if the user is an admin using the `check_admin` function.
   """
   projects = get_all_assistants()
   user_session = get_user_info()
   if not user_session: # <-- Likely redundant since before_request method already checks for this.
     return jsonify({'message': 'User is not authenticated.'}), 401
+
+  if check_admin():
+    return jsonify({'assistants': projects}), 200
     
   projects = check_user_projects(projects, user_session['Assistants'])
   
@@ -99,7 +104,10 @@ def get_projects():
         'assistants': projects
     }), 200
   else:
-    return jsonify({'message': 'Could not obtain assistants.'}), 400
+    if len(projects) == 0:
+      return jsonify({'message': "No assistants found."}), 404
+    else:
+      return jsonify({'message': 'Could not obtain assistants.'}), 400
   
 
 @project_bp.route('/add_project', methods=['POST'])
