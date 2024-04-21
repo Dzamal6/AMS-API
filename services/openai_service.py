@@ -145,9 +145,9 @@ def create_agent(agent_id):
         instructions=agent_data['Instructions'],
         model=agent_data['Model'],
         tools=[{
-          "type": "retrieval"
+          "type": "file_search"
         }],
-        file_ids=file_ids
+        tool_resources={"file_search": {"vector_store_ids": file_ids}},
        )
     else:
       agent = client.beta.assistants.create(name=agent_data['Name'],
