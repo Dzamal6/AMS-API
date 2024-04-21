@@ -884,17 +884,17 @@ def get_agent_data(agentId):
       if not agent:
         return None
 
-      blobs = []
+      docs = []
       for file in agent.documents:
         content_bytes = cast(bytes, file.content)
-        blobs.append(io.BytesIO(content_bytes))
+        docs.append({'name': file.name, 'bytes': io.BytesIO(content_bytes)})
 
       agent_dict = {
         "Id": agent.id,
         "Name": agent.name,
         "Instructions": agent.system_prompt,
         "Model": agent.model,
-        "Documents_IO": blobs,
+        "Documents_IO": docs,
         "Created": agent.created,
         "LastModified": agent.last_modified,
       }

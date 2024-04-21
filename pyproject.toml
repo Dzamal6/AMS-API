@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "python-template"
-version = "0.17.7"
+version = "0.17.8"
 description = "API for Assistant Management System"
 authors = ["Dzamal (https://github.com/Dzamal6)"]
 

@@ -1,6 +1,7 @@
 from flask import jsonify
 import tiktoken
 import openai
+from openai import BadRequestError
 import os
 import json
 from packaging import version
@@ -134,21 +135,26 @@ def create_agent(agent_id):
       agent_id = str(agent_details['agent_id'])
       print("Loaded existing assistant ID")
   else:
-    if agent_data['Documents_IO'] is not []:
+    if len(agent_data['Documents_IO']) > 0:
       files = agent_data['Documents_IO']
       file_ids = []
       for file in files:
-        upload_file = client.files.create(file=file, purpose='assistants')
+        file_object = (file['name'], file['bytes'])
+        upload_file = client.files.create(file=file_object, purpose='assistants')
         file_ids.append(upload_file.id)
-        
-      agent = client.beta.assistants.create(name=agent_data['Name'],
-        instructions=agent_data['Instructions'],
-        model=agent_data['Model'],
-        tools=[{
-          "type": "file_search"
-        }],
-        tool_resources={"file_search": {"vector_store_ids": file_ids}},
-       )
+
+      try: 
+        agent = client.beta.assistants.create(name=agent_data['Name'],
+          instructions=agent_data['Instructions'],
+          model=agent_data['Model'],
+          tools=[{
+            "type": "file_search"
+          }],
+          tool_resources={"file_search": {"vector_stores": [{"file_ids": file_ids}]}},
+         )
+      except BadRequestError as e:
+        print(f"Error: {e}")
+        return None
     else:
       agent = client.beta.assistants.create(name=agent_data['Name'],
                                               instructions=agent_data['Instructions'],
