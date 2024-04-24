@@ -1,6 +1,6 @@
 {
   "functions": {
-    "/**": {
+    "main.py": {
       "runtime": "python@3.10.13"
     }
   },
