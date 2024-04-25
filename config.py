@@ -9,7 +9,6 @@ from openai import OpenAI
 POSTGRES_CONNECTION_STRING = os.environ['POSTGRES_CONNECTION_STRING']
 
 # Voiceflow API key for communication with the Voiceflow API
-VOICEFLOW_API_KEY = os.environ['VOICEFLOW_API_KEY']
 VOICEFLOW_KNOWLEDGE_BASE = 'https://api.voiceflow.com/v3alpha/knowledge-base/docs'
 VOICEFLOW_ANALYTICS = 'https://analytics-api.voiceflow.com/v1/query/usage'
 VOICEFLOW_TRANSCRIPTS = 'https://api.voiceflow.com/v2/transcripts'
