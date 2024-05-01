@@ -102,7 +102,7 @@ def get_all_agents():
   assistant_session = get_assistant_session()
   if not assistant_session:
     return jsonify({'error': 'Invalid assistant session.'}), 401
-  agents = retrieve_all_agents()
+  agents = retrieve_all_agents(assistant_session['Id'])
   if agents is None:
     return jsonify({'error': 'An error occurred while retrieving agents.'}), 400
 
