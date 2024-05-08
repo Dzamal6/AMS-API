@@ -735,6 +735,10 @@ def upload_files(files):
                             name=filename, 
                             content_hash=doc_hash, 
                             content=doc_content)
+        # assistants = session.query(Assistant).filter(
+        #     Assistant.id.in_(assistant_ids)).all()
+        # new_agent.assistants = assistants
+        
         session.add(document)
         session.commit()
 
@@ -767,6 +771,7 @@ def get_all_files():
   Returns:
       list of dict or None: A list of dictionaries representing all stored files, or None if an error occurs.
   """
+  # agents = session.query(Agent).join(Agent.assistants).filter(Assistant.id == assistant_id).all()
   try:
     with session_scope() as session:
       docs = session.query(Document).all()
@@ -953,17 +958,20 @@ def upload_agent_metadata(agent_details: dict[str, str],
     return None
 
 
-def retrieve_all_agents():
+def retrieve_all_agents(assistant_id: str):
   """
   Retrieves all agents from the database.
+
+  Parameters:
+    assistant_id (str): The ID of the assistant to filter agents by.
 
   Returns:
       list of dict or None: A list of dictionaries representing all agents, or None if an error occurs.
   """
   try:
     with session_scope() as session:
-      agents = session.query(Agent).all()
-
+      agents = session.query(Agent).join(Agent.assistants).filter(Assistant.id == assistant_id).all()
+      
       return [{
         "Id": agent.id,
         "Name": agent.name,

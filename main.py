@@ -7,6 +7,9 @@ from database.database import engine, seed_data, upload_documents
 from database.base import Base
 import database.models
 import logging
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = Flask(__name__)
 CORS(app,
@@ -20,8 +23,8 @@ config.limiter.init_app(app)
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
 logging.getLogger('sqlalchemy.engine').setLevel(logging.DEBUG)
 
-# Base.metadata.create_all(engine)
-# seed_data()
+Base.metadata.create_all(engine)
+seed_data()
 # upload_documents()
 
 app.before_request(check_session_validation)
