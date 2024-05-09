@@ -118,8 +118,13 @@ def delete_document():
       Requires at least one of the following roles: `Admin`, `Master`, `Worker`
   """
   file_id = request.json.get('document_id')
+  assistant_session = get_assistant_session()
 
-  deleted = delete_doc(file_id)
+  if assistant_session is None or not assistant_session:
+    return jsonify({'error': 'Invalid assistant session.'}), 400
+  
+  assistant_id = str(assistant_session['Id'])
+  deleted = delete_doc(file_id, assistant_id=assistant_id)
   if deleted is None:
     return jsonify({'error':
                     'An error occurred while deleting the document.'}), 400

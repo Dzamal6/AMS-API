@@ -796,27 +796,35 @@ def get_all_files(assistant_id: str):
     return None
 
 
-def delete_doc(docId):
+def delete_doc(docId, assistant_id: str):
   """
-  Deletes a specific document from the database based on the document's ID.
+    Deletes a specific document from the database or removes an assistant's association
+    with that document based on the document's ID and the provided assistant ID.
 
-  Parameters:
-      docId (str): The unique identifier of the document to be deleted.
+    Parameters:
+        docId (str): The unique identifier of the document to be deleted.
+        assistant_id (str): The ID of the assistant for whom the document association should be removed.
 
-  Returns:
-      str or None: The ID of the deleted document if successful, None otherwise.
-  """
+    Returns:
+        str or None: The ID of the deleted document if successful, or None otherwise.
+    """
   try:
     with session_scope() as session:
-      result = session.query(Document).filter_by(id=docId).first()
-      if result:
-        session.delete(result)
+      document = session.query(Document).filter_by(id=docId).first()
+      if not document:
+        print(f"Document with ID {docId} not found")
+        return None
+
+      if len(document.assistants) > 1:
+        document.assistants = [assistant for assistant in document.assistants if assistant.id != assistant_id]
+        session.commit()
+        print(f"Removed association for assistant ID {assistant_id} from document ID {docId}")
+        return docId
+      else:
+        session.delete(document)
         session.commit()
         print(f"Deleted document with ID {docId}")
         return docId
-      else:
-        print(f"Document with ID {docId} not found")
-        return None
   except Exception as e:
     print(f"An error occurred: {e}")
     return None

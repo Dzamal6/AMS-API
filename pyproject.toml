@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "AMS-API"
-version = "1.0.2"
+version = "0.14.3"
 description = "API for Assistant Management System"
 authors = ["Dzamal (https://github.com/Dzamal6)"]
 
