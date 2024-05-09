@@ -54,7 +54,9 @@ def create_agent():
   file_ids = []
   
   if files:
-    uploaded_files = upload_files(files)
+    assistant_ids = []
+    assistant_ids.append(assistant_id)
+    uploaded_files = upload_files(files, assistant_ids)
     print(uploaded_files)
   
     for status, response in uploaded_files:
@@ -178,6 +180,13 @@ def update_agent_route():
   instructions = request.form.get('instructions')
   model = request.form.get('model')
 
+  assistant_session = get_assistant_session()
+
+  if assistant_session is None or not assistant_session:
+    return jsonify({'error': 'Invalid assistant session.'}), 400
+  
+  assistant_id = str(assistant_session['Id'])
+
   if not agent_id or not name and not description and not instructions and not model:
     return jsonify({'error': 'Missing required fields.'}), 400
 
@@ -185,7 +194,9 @@ def update_agent_route():
     file_ids = []
 
   if files:
-    uploaded_files = upload_files(files)
+    assistant_ids = []
+    assistant_ids.append(assistant_id)
+    uploaded_files = upload_files(files, assistant_ids)
     print(uploaded_files)
 
     for status, response in uploaded_files:

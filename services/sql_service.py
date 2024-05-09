@@ -688,7 +688,7 @@ def update_user(user_id,
     return None
 
 # TODO: files already included in the db need to be able to receive new agent relationships
-def upload_files(files):
+def upload_files(files, assistant_ids: list[str]=None):
   """
   Uploads files to the database, checking for duplicates based on file content hash.
 
@@ -721,6 +721,14 @@ def upload_files(files):
         if doc_hash in existing_hashes:
             existing_doc = existing_hashes[doc_hash]
             print(f"Duplicate found, including existing file in response: {existing_doc.id}")
+
+            existing_assistant_ids = {assistant.id for assistant in existing_doc.assistants}
+            new_assistant_ids = set(assistant_ids) - existing_assistant_ids
+            if new_assistant_ids:
+              new_assistants = session.query(Assistant).filter(Assistant.id.in_(new_assistant_ids)).all()
+              existing_doc.assistants.extend(new_assistants)
+              session.commit()
+
             responses.append(('success', {
                 'message': f'Duplicate document found for file {file_id}, including existing file.',
                 "Id": existing_doc.id,
@@ -731,13 +739,9 @@ def upload_files(files):
             }))
             continue
 
-        document = Document(id=file_id, 
-                            name=filename, 
-                            content_hash=doc_hash, 
-                            content=doc_content)
-        # assistants = session.query(Assistant).filter(
-        #     Assistant.id.in_(assistant_ids)).all()
-        # new_agent.assistants = assistants
+        document = Document(id=file_id, name=filename, content_hash=doc_hash, content=doc_content)
+        assistants = session.query(Assistant).filter(Assistant.id.in_(assistant_ids)).all() if assistant_ids else []
+        document.assistants = assistants
         
         session.add(document)
         session.commit()
@@ -764,17 +768,19 @@ def upload_files(files):
   return responses
 
 
-def get_all_files():
+def get_all_files(assistant_id: str):
   """
-  Retrieves all files from the database.
+  Retrieves all files related to the set assistant from the database.
+
+  Parameters:
+      assistant_id (string): The unique identifier of the selected assistant.
 
   Returns:
       list of dict or None: A list of dictionaries representing all stored files, or None if an error occurs.
   """
-  # agents = session.query(Agent).join(Agent.assistants).filter(Assistant.id == assistant_id).all()
   try:
     with session_scope() as session:
-      docs = session.query(Document).all()
+      docs = session.query(Document).join(Document.assistants).filter(Assistant.id == assistant_id).all()
       return [{
           "Id":
           str(doc.id),
@@ -960,13 +966,16 @@ def upload_agent_metadata(agent_details: dict[str, str],
 
 def retrieve_all_agents(assistant_id: str):
   """
-  Retrieves all agents from the database.
+  Retrieves all agents related to the selected assistant from the database.
 
   Parameters:
     assistant_id (str): The ID of the assistant to filter agents by.
 
   Returns:
       list of dict or None: A list of dictionaries representing all agents, or None if an error occurs.
+
+  Access Control:
+      Requires an assistant to be set prior to its call.
   """
   try:
     with session_scope() as session:

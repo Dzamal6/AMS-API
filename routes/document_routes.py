@@ -5,7 +5,7 @@ import uuid
 import os
 import fitz  # PyMuPDF
 from docx import Document
-from functions import roles_required
+from functions import roles_required, get_assistant_session
 
 document_bp = Blueprint('documents', __name__)
 
@@ -32,11 +32,20 @@ def upload_document():
   Access Control:
       Requires one of the following roles: `Admin`, `Master`, `Worker`
   """
+  assistant_session = get_assistant_session()
+
+  if assistant_session is None or not assistant_session:
+    return jsonify({'error': 'Invalid assistant session.'}), 400
+  
+  assistant_id = str(assistant_session['Id'])
+
   files = request.files.getlist('file')
   if not files or any(file.filename == '' for file in files):
     return jsonify({'error': 'No file(s) provided'}), 400
 
-  responses = upload_files(files)
+  assistant_ids = []
+  assistant_ids.append(assistant_id)
+  responses = upload_files(files, assistant_ids)
 
   stripped_responses = []
   for status, response in responses:
@@ -71,9 +80,14 @@ def get_documents():
       400 Bad Request: An error occurred.
 
   Access Control:
-      Requires at least one of the following roles: `Admin`, `Master`, `Worker`
+      Requires at least one of the following roles: `Admin`, `Master`, `Worker`.
+      Requires an assistant to be set prior to its call.
   """
-  files = get_all_files()
+  assistant_session = get_assistant_session()
+  if assistant_session is None or not assistant_session:
+    return jsonify({'error': 'Invalid assistant session.'}), 400
+  
+  files = get_all_files(str(assistant_session['Id']))
   if files is None:
     return jsonify({'error':
                     'An error occurred while retrieving documents.'}), 400
