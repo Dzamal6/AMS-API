@@ -1,6 +1,5 @@
 import os
 from itsdangerous import URLSafeSerializer
-from pyairtable import Api
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from openai import OpenAI
