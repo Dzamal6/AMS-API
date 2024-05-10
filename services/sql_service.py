@@ -1,5 +1,5 @@
 from database.database import SessionLocal, session_scope
-from database.models import User, Role, Assistant, ChatSession, Transcript, Document, Agent
+from database.models import User, Role, Assistant, ChatSession, Transcript, Document, Agent, assistant_document
 from sqlalchemy.exc import SQLAlchemyError, NoResultFound
 import uuid
 from flask import jsonify
@@ -816,9 +816,16 @@ def delete_doc(docId, assistant_id: str):
         return None
 
       if len(document.assistants) > 1:
-        document.assistants = [assistant for assistant in document.assistants if assistant.id != assistant_id]
-        session.commit()
-        print(f"Removed association for assistant ID {assistant_id} from document ID {docId}")
+        assoc_query = session.query(assistant_document).filter(
+          assistant_document.c.document_id == docId,
+          assistant_document.c.assistant_id == assistant_id)
+        assoc_entry = assoc_query.first()
+        if assoc_entry:
+            assoc_query.delete()
+            session.commit()
+            print(f"Removed association for assistant ID {assistant_id} from document ID {docId}")
+        else:
+            print(f"No association found for assistant ID {assistant_id} with document ID {docId}")
         return docId
       else:
         session.delete(document)

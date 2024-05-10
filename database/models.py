@@ -44,7 +44,7 @@ class Assistant(Base):
                        secondary='user_assistants',
                        back_populates='assistants')
   documents = relationship("Document",
-                           secondary='assistant_file',
+                           secondary='assistant_document',
                            back_populates="assistants")
   token = Column(String, unique=True, index=True)
   vID = Column(String, unique=True, index=True)
@@ -120,8 +120,8 @@ class Document(Base):
                         secondary='agent_file',
                         back_populates='documents')
   assistants = relationship("Assistant",
-                            secondary='assistant_file',
-                            back_populates='documents')
+                            secondary='assistant_document',
+                            back_populates='documents',)
   created = Column(DateTime, default=datetime.utcnow)
   last_modified = Column(DateTime,
                          default=datetime.utcnow,
@@ -145,8 +145,8 @@ class Agent(Base):
                          onupdate=datetime.utcnow)
 
 
-assistant_file = Table(
-    'assistant_file', Base.metadata,
+assistant_document = Table(
+    'assistant_document', Base.metadata,
     Column('document_id', 
            UUID(as_uuid=True),
            ForeignKey('documents.id'), 
