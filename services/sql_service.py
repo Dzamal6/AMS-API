@@ -1,10 +1,10 @@
 from database.database import SessionLocal, session_scope
-from database.models import User, Role, Assistant, ChatSession, Transcript, Document, Agent, assistant_document
+from database.models import User, Role, Assistant, ChatSession, Transcript, Document, Agent, assistant_document, agent_file_table
 from sqlalchemy.exc import SQLAlchemyError, NoResultFound
 import uuid
 from flask import jsonify
 from datetime import datetime
-from sql_functions import get_roles_as_dicts, get_assistants_as_dicts
+from sql_functions import associate_assistants, check_for_duplicate, compute_file_hash, get_roles_as_dicts, get_assistants_as_dicts
 from functions import hash_password
 from werkzeug.utils import secure_filename
 import os
@@ -699,71 +699,46 @@ def upload_files(files, assistant_ids: list[str]=None):
       list of tuple: A list containing the results for each file upload attempt. Each tuple contains a status ('success' or 'error') and a dictionary with relevant information.
   """
   responses = []
-  files_with_ids = {
-    str(uuid.uuid4()): file
-    for file in files
-  }
+  files_with_ids = {str(uuid.uuid4()): file for file in files}
+
   try:
     with session_scope() as session:
-      file_data = []
-      for file_id, doc in files_with_ids.items():
-        doc_content = doc.read()
-        doc.seek(0)
-        doc_hash = hashlib.sha256(doc_content).hexdigest()
-        file_data.append((doc, file_id, doc.filename, doc_hash, doc_content))
-
+      file_data = [(file_id, doc, doc.filename, compute_file_hash(doc)) for file_id, doc in files_with_ids.items()]
       hashes = [f[3] for f in file_data]
-      existing_docs = session.query(Document).filter(
-          Document.content_hash.in_(hashes)).all()
-      existing_hashes = {doc.content_hash: doc for doc in existing_docs}
+      existing_docs = check_for_duplicate(hashes, session)
 
-      for doc, file_id, filename, doc_hash, doc_content in file_data:
-        if doc_hash in existing_hashes:
-            existing_doc = existing_hashes[doc_hash]
-            print(f"Duplicate found, including existing file in response: {existing_doc.id}")
+      for file_id, doc, filename, doc_hash in file_data:
+        if doc_hash in existing_docs:
+          existing_doc = existing_docs[doc_hash]
+          print(f"Duplicate found, including existing file in response: {existing_doc.id}")
+          associate_assistants(existing_doc, assistant_ids, session)
+          responses.append(('success', {
+              'message': f'Duplicate document found for file {file_id}, including existing file.',
+              "Id": existing_doc.id,
+              "Name": existing_doc.name,
+              "Content_hash": existing_doc.content_hash,
+              "Created": existing_doc.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
+              "LastModified": existing_doc.last_modified.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
+          }))
+          continue
 
-            existing_assistant_ids = {assistant.id for assistant in existing_doc.assistants}
-            new_assistant_ids = set(assistant_ids) - existing_assistant_ids
-            if new_assistant_ids:
-              new_assistants = session.query(Assistant).filter(Assistant.id.in_(new_assistant_ids)).all()
-              existing_doc.assistants.extend(new_assistants)
-              session.commit()
-
-            responses.append(('success', {
-                'message': f'Duplicate document found for file {file_id}, including existing file.',
-                "Id": existing_doc.id,
-                "Name": existing_doc.name,
-                "Content_hash": existing_doc.content_hash,
-                "Created": existing_doc.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
-                "LastModified": existing_doc.last_modified.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
-            }))
-            continue
-
-        document = Document(id=file_id, name=filename, content_hash=doc_hash, content=doc_content)
-        assistants = session.query(Assistant).filter(Assistant.id.in_(assistant_ids)).all() if assistant_ids else []
-        document.assistants = assistants
-        
+        document = Document(id=file_id, name=filename, content_hash=doc_hash)
+        if assistant_ids:
+          assistants = session.query(Assistant).filter(Assistant.id.in_(assistant_ids)).all()
+          document.assistants = assistants
         session.add(document)
         session.commit()
-
         responses.append(('success', {
-            "Id":
-            document.id,
-            "Name":
-            document.name,
-            "Content_hash":
-            document.content_hash,
-            "Created":
-            document.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
-            "LastModified":
-            document.last_modified.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
+            "Id": document.id,
+            "Name": document.name,
+            "Content_hash": document.content_hash,
+            "Created": document.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
+            "LastModified": document.last_modified.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
         }))
 
   except Exception as e:
-    print(f"An error occurred: {e}")
-    responses.append(('error', {
-        'error': f'An error occurred during upload. {str(e)}'
-    }))
+      print(f"An error occurred: {e}")
+      responses.append(('error', {'error': f'An error occurred during upload. {str(e)}'}))
 
   return responses
 
@@ -1023,6 +998,7 @@ def delete_agent(agent_id):
   """
   try:
     with session_scope() as session:
+      # obtain agent from db and delete associated files before deleting it
       result = session.query(Agent).filter_by(id=agent_id).first()
       if result:
         session.delete(result)

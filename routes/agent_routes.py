@@ -103,6 +103,7 @@ def get_all_agents():
   """
   assistant_session = get_assistant_session()
   if not assistant_session:
+    print("No assistant selected.")
     return jsonify({'error': 'Invalid assistant session.'}), 401
   agents = retrieve_all_agents(assistant_session['Id'])
   if agents is None:
@@ -144,7 +145,7 @@ def delete_agent_route():
       "message": "Agent deleted from the database.",
       "agent_id": deleted_agent_id}), 200
 
-@agent_bp.route('/agent/db/update', methods=['POST'])
+@agent_bp.route('/agent/db/update', methods=['POST']) # ADDING DUPLICATE FILES TO EXISTING OR NEW AGENTS DOESN'T ADD THEM
 def update_agent_route():
   """
   Updates an existing agent in the database, including uploading new files without duplicating existing ones.
@@ -189,20 +190,20 @@ def update_agent_route():
 
   if not agent_id or not name and not description and not instructions and not model:
     return jsonify({'error': 'Missing required fields.'}), 400
-
+  print(f'Received file ids: {[f"{file_id}" for file_id in file_ids]}')
   if not file_ids:
     file_ids = []
 
   if files:
     assistant_ids = []
     assistant_ids.append(assistant_id)
-    uploaded_files = upload_files(files, assistant_ids)
-    print(uploaded_files)
+    uploaded_files = upload_files(files)
+    print(f'UPLOADED FILES: {uploaded_files}')
 
     for status, response in uploaded_files:
       if status == 'success' and response['Id'] not in file_ids:
         file_ids.append(response['Id'])
-
+  print(f'Updating agent with files: {[f"{file_id}, " for file_id in file_ids]}')
   update = update_agent(agent_id, name, description, instructions, model, file_ids)
 
   if update is None:

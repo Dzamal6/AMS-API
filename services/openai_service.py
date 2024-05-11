@@ -1,7 +1,7 @@
 from flask import jsonify
 import tiktoken
 import openai
-from openai import BadRequestError
+from openai import BadRequestError, NotFoundError
 import os
 import json
 from packaging import version
@@ -197,12 +197,21 @@ def delete_agent(agent_id: str):
 
   with open(path, 'r') as file:
     agent_details = json.load(file)
-
-    if agent_details['file_ids'] is not []:
-      for file_id in agent_details['file_ids']:
-        client.files.delete(file_id)
     
-    os.remove(path)
+  os.remove(path)
+  print(f'Removed temp file: {path}')
+  if agent_details['file_ids'] is not []:
+    for file_id in agent_details['file_ids']:
+      try:
+        client.files.delete(file_id)
+      except NotFoundError as nf:
+        print(f'Failed to delete file: {nf}')
+        continue
+      except BadRequestError as e:
+        print(f'Failed to delete file: {e}')
+        continue
+      print(f'Removed file: {file_id} from OpenAI.')
+    
     response = client.beta.assistants.delete(assistant_id=agent_details['agent_id'])
 
   if response.deleted:
