@@ -4,7 +4,7 @@ from sqlalchemy.exc import SQLAlchemyError, NoResultFound
 import uuid
 from flask import jsonify
 from datetime import datetime
-from sql_functions import associate_assistants, check_for_duplicate, compute_file_hash, get_roles_as_dicts, get_assistants_as_dicts
+from sql_functions import associate_assistants, check_for_duplicate, compute_file_hash, get_doc_content, get_roles_as_dicts, get_assistants_as_dicts
 from functions import hash_password
 from werkzeug.utils import secure_filename
 import os
@@ -687,7 +687,6 @@ def update_user(user_id,
     print(f"An error occurred: {e}")
     return None
 
-# TODO: files already included in the db need to be able to receive new agent relationships
 def upload_files(files, assistant_ids: list[str]=None):
   """
   Uploads files to the database, checking for duplicates based on file content hash.
@@ -703,11 +702,11 @@ def upload_files(files, assistant_ids: list[str]=None):
 
   try:
     with session_scope() as session:
-      file_data = [(file_id, doc, doc.filename, compute_file_hash(doc)) for file_id, doc in files_with_ids.items()]
+      file_data = [(file_id, doc, doc.filename, compute_file_hash(doc), get_doc_content(doc)) for file_id, doc in files_with_ids.items()]
       hashes = [f[3] for f in file_data]
       existing_docs = check_for_duplicate(hashes, session)
 
-      for file_id, doc, filename, doc_hash in file_data:
+      for file_id, doc, filename, doc_hash, doc_content in file_data:
         if doc_hash in existing_docs:
           existing_doc = existing_docs[doc_hash]
           print(f"Duplicate found, including existing file in response: {existing_doc.id}")
@@ -723,7 +722,7 @@ def upload_files(files, assistant_ids: list[str]=None):
           }))
           continue
 
-        document = Document(id=file_id, name=filename, content_hash=doc_hash)
+        document = Document(id=file_id, name=filename, content_hash=doc_hash, content=doc_content)
         if assistant_ids is not None:
           assistants = session.query(Assistant).filter(Assistant.id.in_(assistant_ids)).all()
           document.assistants = assistants

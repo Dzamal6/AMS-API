@@ -49,3 +49,9 @@ def associate_assistants(existing_doc, assistant_ids, session):
         new_assistants = session.query(Assistant).filter(Assistant.id.in_(new_assistant_ids)).all()
         existing_doc.assistants.extend(new_assistants)
         session.commit()
+        
+def get_doc_content(doc):
+    """ Retrieve contents of a document. """
+    content = doc.read()
+    doc.seek(0)
+    return content
