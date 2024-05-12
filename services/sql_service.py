@@ -711,7 +711,8 @@ def upload_files(files, assistant_ids: list[str]=None):
         if doc_hash in existing_docs:
           existing_doc = existing_docs[doc_hash]
           print(f"Duplicate found, including existing file in response: {existing_doc.id}")
-          associate_assistants(existing_doc, assistant_ids, session)
+          if assistant_ids is not None:
+            associate_assistants(existing_doc, assistant_ids, session)
           responses.append(('success', {
               'message': f'Duplicate document found for file {file_id}, including existing file.',
               "Id": existing_doc.id,
@@ -723,9 +724,10 @@ def upload_files(files, assistant_ids: list[str]=None):
           continue
 
         document = Document(id=file_id, name=filename, content_hash=doc_hash)
-        if assistant_ids:
+        if assistant_ids is not None:
           assistants = session.query(Assistant).filter(Assistant.id.in_(assistant_ids)).all()
           document.assistants = assistants
+          
         session.add(document)
         session.commit()
         responses.append(('success', {

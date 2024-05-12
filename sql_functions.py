@@ -41,9 +41,11 @@ def check_for_duplicate(hashes, session):
 
 def associate_assistants(existing_doc, assistant_ids, session):
     """ Associate new assistants with an existing document if they are not already associated. """
-    existing_assistant_ids = {assistant.id for assistant in existing_doc.assistants}
+    existing_assistant_ids = {str(assistant.id) for assistant in existing_doc.assistants}
     new_assistant_ids = set(assistant_ids) - existing_assistant_ids
+    
     if new_assistant_ids:
+        print(f'Associating file {existing_doc.id} with assistants {new_assistant_ids}. Existing assistant ids: {existing_assistant_ids}')
         new_assistants = session.query(Assistant).filter(Assistant.id.in_(new_assistant_ids)).all()
         existing_doc.assistants.extend(new_assistants)
         session.commit()

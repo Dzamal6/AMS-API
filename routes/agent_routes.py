@@ -203,7 +203,7 @@ def update_agent_route():
     for status, response in uploaded_files:
       if status == 'success' and response['Id'] not in file_ids:
         file_ids.append(response['Id'])
-  print(f'Updating agent with files: {[f"{file_id}, " for file_id in file_ids]}')
+  print(f'Updating agent with files: {[f"{file_id}" for file_id in file_ids]}')
   update = update_agent(agent_id, name, description, instructions, model, file_ids)
 
   if update is None:
