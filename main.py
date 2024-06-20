@@ -1,3 +1,4 @@
+from authlib.integrations.flask_client import OAuth
 from flask import Flask
 from flask_cors import CORS
 import config
@@ -20,8 +21,8 @@ app.config['LOGIN_KEY'] = config.LOGIN_KEY
 
 config.limiter.init_app(app)
 
-logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
-logging.getLogger('sqlalchemy.engine').setLevel(logging.DEBUG)
+# logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
+# logging.getLogger('sqlalchemy.engine').setLevel(logging.DEBUG)
 
 # Base.metadata.create_all(engine)
 # seed_data()

@@ -15,6 +15,7 @@ from services.sql_service import (
   get_all_roles,
   get_all_users,
   get_user,
+  register_user,
   remove_user,
   update_user,
 )
@@ -31,8 +32,7 @@ def create_user_route():
   - POST /create_user
 
   Parameters:
-      username (str): The name of the user to create.
-      password (str): The password of the user to create (will be hashed before storage).
+      email (str): The email of the user to create.
       roles (list of str): The roles assigned to the new user.
       assistants (list of str): IDs of assistants the user will have access to.
 
@@ -46,19 +46,41 @@ def create_user_route():
   Access Control:
       Either `Admin` or `Master` roles are required to create new users.
   """
-  data = request.get_json()
-  username = data['username']
-  password = data['password']
-  roles = data['roles']
-  assistants = data['assistants']
-  exists = check_user_exists(username)
+  email = request.json.get("email")
+  roles = request.json.get("roles")
+  assistants = request.json.get("assistants")
+  if not email or not roles:
+    return jsonify({'error': 'Missing required fields.'}), 400
+  
+  exists = check_user_exists(email)
   
   if exists:
     return jsonify({'error': 'User already exists'}), 400
 
   if not roles:
     roles = ['Trainee']
-  return add_user(username, hash_password(password), roles, assistants)
+  return add_user(email, roles, assistants)
+
+# TODO: SET COOKIE AND LOGIN RIGHT AWAY
+@users_bp.route('/register', methods=['POST'])
+def register_user_route():
+  username = request.json.get('username')
+  email = request.json.get('email')
+  password = request.json.get('password')
+  
+  if not email or not password:
+    return jsonify({'error': 'Missing required fields.'}), 400
+  
+  exists = check_user_exists(email=email)
+  if not exists:
+    return jsonify({'error': 'User does not exist.'}), 404
+  
+  registered_user = register_user(username, email, hash_password(password))
+  
+  if registered_user is None:
+    return jsonify({'error': 'Failed to register user.'}), 400
+  
+  return jsonify({'user': registered_user}), 200
 
 @users_bp.route('/delete_user', methods=['POST'])
 @roles_required('admin', 'master')
@@ -151,7 +173,7 @@ def login_route():
   - POST /login
 
   Parameters:
-      username (str): The name of the user attempting to log in.
+      credential (str): The email or username of the user attempting to log in.
       password (str): The password of the user attempting to log in.
       remember (bool): Flag to determine if the user should remain logged in for an extended period.
 
@@ -166,18 +188,18 @@ def login_route():
   Note:
       Uses a `flask limiter` to restrict login attempts to 10 per minute.
   """
-  data = request.get_json()
-  username = data['username']
-  password = data['password']
-  remember = data['remember']
-  user = get_user(username)
+  credential = request.json.get("credential")
+  password = request.json.get("password")
+  remember = request.json.get("remember")
+  user = get_user(credential)
   
-  if not user:
+  if not user or user is None:
     return jsonify({'message': 'Invalid credentials.'}), 401
   if check_password(user['password_hash'], password):
     serializer = user_session_serializer
     user_info = {
-        'Username': username,
+        'Username': user['Username'],
+        'Email': user['Email'],
         'Id': user['Id'],
         'Roles': user['Roles'],
         'Assistants':  user['Assistants'],

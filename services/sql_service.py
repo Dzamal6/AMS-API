@@ -5,7 +5,7 @@ import uuid
 from flask import jsonify
 from datetime import datetime
 from sql_functions import associate_assistants, check_for_duplicate, compute_file_hash, get_doc_content, get_roles_as_dicts, get_assistants_as_dicts
-from functions import hash_password
+from functions import hash_password, is_email
 from werkzeug.utils import secure_filename
 import os
 import hashlib
@@ -264,7 +264,7 @@ def get_assistant_by_id(assistant_id):
     return jsonify({'message': 'An error occurred'}), 500
 
 
-def add_user(username, password, roles, assistants):
+def add_user(email, roles, assistants):
   """
   Adds a new user with specified roles and assistants to the database.
 
@@ -278,6 +278,8 @@ def add_user(username, password, roles, assistants):
       JSON or None: A JSON object containing the registration details and success message, or an error message if the registration fails.
   """
   id = str(uuid.uuid4())
+  
+  print('creating user')
 
   try:
     with session_scope() as session:
@@ -286,8 +288,7 @@ def add_user(username, password, roles, assistants):
           uuid.UUID(assistant_id) for assistant_id in assistants
       ]
       new_user = User(id=id,
-                      username=username,
-                      password_hash=password,
+                      email=email,
                       roles=session.query(Role).filter(
                           Role.id.in_(roles_uuids)).all(),
                       assistants=session.query(Assistant).filter(
@@ -297,7 +298,7 @@ def add_user(username, password, roles, assistants):
       session.commit()
 
       return jsonify({
-          "message": "Registration successful",
+          "message": "User created successfully.",
           "response": {
               "Id":
               id,
@@ -305,8 +306,8 @@ def add_user(username, password, roles, assistants):
               new_user.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
               "LastModified":
               new_user.last_modified.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
-              "Username":
-              new_user.username,
+              "Email":
+              new_user.email,
               "Roles":
               get_roles_as_dicts(new_user.roles),
               "Assistants":
@@ -316,7 +317,34 @@ def add_user(username, password, roles, assistants):
 
   except SQLAlchemyError as e:
     print(f"Error: {e}")
-    return jsonify({'message': "Registration failed"}), 400
+    return jsonify({'message': "Failed to create user."}), 400
+  
+
+def register_user(username: str, email: str, password_hash: str):
+  try:
+    with session_scope() as session:
+      user = session.query(User).filter_by(email=email).first()
+      
+      user.username = username
+      user.password_hash = password_hash
+      
+      session.commit()
+      
+      registered_user = {
+        "Id": user.id,
+        "Username": user.username,
+        "Email": user.email,
+        "Created": user.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
+        "LastModified": user.last_modified.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
+      }
+      
+      return registered_user
+  except SQLAlchemyError as e:
+    print(f"Error: {e}")
+    return None
+  except Exception as e:
+    print(f"Error: {e}")
+    return None
 
 
 def remove_user(user_id):
@@ -349,20 +377,22 @@ def remove_user(user_id):
     return jsonify({'message': 'An error occurred'}), 500
 
 
-def check_user_exists(user_id):
+def check_user_exists(email):
   """
-  Checks if a user exists in the database based on the user ID.
+  Checks if a user exists in the database based on the user email.
 
   Parameters:
-      user_id (str): The unique identifier of the user to be checked.
+      email (str): The email of the user to be checked.
 
   Returns:
       bool: True if the user exists, False otherwise.
   """
   try:
     with session_scope() as session:
-      result = session.query(User).filter_by(id=user_id).first()
-      return result is not None
+      result = session.query(User).filter_by(email=email).first()
+      if result is None or not result:
+        return False
+      return True
   except Exception as e:
     print(f"Error: {e}")
     return False
@@ -496,6 +526,8 @@ def get_all_users():
             str(user.id),
             "Username":
             user.username,
+            "Email": 
+            user.email,
             "Roles":
             user_roles,
             "Assistants":
@@ -511,19 +543,22 @@ def get_all_users():
     return []
 
 
-def get_user(username):
+def get_user(credential: str):
   """
-  Retrieves a user by username from the database.
+  Retrieves a user by email or username from the database.
 
   Parameters:
-      username (str): The username of the user to be retrieved.
+      credential (str): The email of the user to be retrieved.
 
   Returns:
       dict or None: A dictionary containing the user's details if found, or an empty dictionary if the user is not found, or None if an error occurs.
   """
   try:
     with session_scope() as session:
-      user = session.query(User).filter(User.username == username).first()
+      if is_email:
+        user = session.query(User).filter(User.email == credential).first()
+      else:
+        user = session.query(User).filter(User.username == credential).first()
 
       if user:
         user_data = {
@@ -531,6 +566,8 @@ def get_user(username):
             str(user.id),
             'Username':
             user.username,
+            'Email':
+            user.email,
             'Roles':
             get_user_roles([role.id for role in user.roles]),
             'Assistants':

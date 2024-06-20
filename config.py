@@ -33,3 +33,8 @@ limiter = Limiter(key_func=get_remote_address)
 
 # Declare allowed origins for CORS
 ALLOWED_ORIGINS = ['https://127.0.0.1:5173', 'https://localhost:5173', os.environ['CLIENT_APP']]
+
+# Configuring Google OAuth
+GOOGLE_SECRET_KEY = 'your_secret_key'
+GOOGLE_CLIENT_ID = os.environ['GOOGLE_CLIENT_ID']
+GOOGLE_CLIENT_SECRET = os.environ['GOOGLE_CLIENT_SECRET']

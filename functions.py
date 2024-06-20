@@ -201,7 +201,6 @@ def check_admin():
   """
   user_session = get_user_info()
   if user_session:
-    print(user_session['Roles'])
     return any(role['Name'].lower() == 'admin' for role in user_session.get('Roles', []))
 
 
@@ -295,3 +294,14 @@ def decrypt_token(key, encrypted_token):
   """
   fernet = Fernet(key)
   return fernet.decrypt(encrypted_token.encode()).decode()
+
+
+import re
+
+def is_email(email):
+    email_regex = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    
+    if re.match(email_regex, email):
+        return True
+    else:
+        return False

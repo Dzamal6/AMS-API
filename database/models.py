@@ -6,13 +6,15 @@ from sqlalchemy.dialects.postgresql import UUID
 
 # MIGRATING CMDS: alembic revision --autogenerate -m "desc"
 # MIGRATING CMDS: alembic upgrade head
+# MIGRATE TO SPECIFIC VERSION: alembic upgrade <target-version>
 
 
 class User(Base):
   __tablename__ = 'users'
   id = Column(UUID(as_uuid=True), primary_key=True, index=True)
   username = Column(String(30), unique=True, index=True)
-  password_hash = Column(String(255), nullable=False)
+  email = Column(String(30), unique=True, index=True)
+  password_hash = Column(String(255), nullable=True)
   roles = relationship('Role', secondary='user_roles', back_populates='users')
   assistants = relationship('Assistant',
                             secondary='user_assistants',

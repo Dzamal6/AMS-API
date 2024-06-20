@@ -57,7 +57,7 @@ def check_session_validation():
       Should be used as a decorator or a before_request function in Flask to secure endpoints.
   """
   exempt_endpoints = ['users.login_route', 'users.register_route', 'users.logout_route',
-                      'openai.initialize', 'openai.openai_chat']
+                      'openai.initialize', 'openai.openai_chat', 'auth.google_login']
   if request.method == "OPTIONS":
     return
 
