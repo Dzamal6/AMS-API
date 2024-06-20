@@ -1,3 +1,4 @@
+import logging
 from database.database import SessionLocal, session_scope
 from database.models import User, Role, Assistant, ChatSession, Transcript, Document, Agent, assistant_document, agent_file_table
 from sqlalchemy.exc import SQLAlchemyError, NoResultFound
@@ -325,17 +326,24 @@ def register_user(username: str, email: str, password_hash: str):
     with session_scope() as session:
       user = session.query(User).filter_by(email=email).first()
       
+      if user.username or user.password_hash:
+        logging.warning(f'Attempt to register existing account: {user.email}')
+        return None
       user.username = username
       user.password_hash = password_hash
       
       session.commit()
       
       registered_user = {
-        "Id": user.id,
+        "Id": str(user.id),
         "Username": user.username,
         "Email": user.email,
         "Created": user.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
-        "LastModified": user.last_modified.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
+        "LastModified": user.last_modified.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
+        "Roles":
+        get_roles_as_dicts(user.roles),
+        "Assistants":
+        get_assistants_as_dicts(user.assistants)
       }
       
       return registered_user
@@ -555,7 +563,7 @@ def get_user(credential: str):
   """
   try:
     with session_scope() as session:
-      if is_email:
+      if is_email(credential):
         user = session.query(User).filter(User.email == credential).first()
       else:
         user = session.query(User).filter(User.username == credential).first()

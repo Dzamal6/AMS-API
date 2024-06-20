@@ -1,5 +1,6 @@
 from cryptography.fernet import Fernet
 from datetime import datetime, timedelta
+from flask.helpers import make_response
 import requests
 import pytz
 from concurrent.futures import ThreadPoolExecutor
@@ -298,10 +299,46 @@ def decrypt_token(key, encrypted_token):
 
 import re
 
-def is_email(email):
+def is_email(email:str):
     email_regex = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
     
     if re.match(email_regex, email):
         return True
     else:
         return False
+      
+def login_user(user: dict[str, any] | dict, remember:bool):
+  """
+  Performs the login process of a user and sets a cookie to remember the user for 2 weeks if the `remember` param is passed as true.
+  
+  Parameters:
+    user (dict[str, any | dict]): The dict of the user to be logged in.
+    remember (bool): A boolean value that determines if a cookie should be set.
+    
+  Returns:
+    Response: A flask response object containing the cookie, message and user information.
+  """
+  serializer = user_session_serializer
+  user_info = {
+      'Username': user['Username'],
+      'Email': user['Email'],
+      'Id': user['Id'],
+      'Roles': user['Roles'],
+      'Assistants':  user['Assistants'],
+      'Created': user['Created'],
+      'LastModified': user['LastModified'],
+  }
+  session_data = serializer.dumps(user_info)
+  print('user session token set.')
+
+  if isinstance(session_data, bytes):
+    session_data = session_data.decode('utf-8')
+
+  response = make_response(jsonify({'message': 'Login successful', 'user': user_info}), 200)
+  response.set_cookie('user_session',
+                      session_data,
+                      httponly=True,
+                      secure=True,
+                      samesite='none',
+                      max_age=None if not remember else 1209600)
+  return response

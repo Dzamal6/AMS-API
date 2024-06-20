@@ -7,6 +7,7 @@ from functions import (
   check_password,
   get_user_info,
   hash_password,
+  login_user,
   roles_required,
 )
 from services.sql_service import (
@@ -61,12 +62,12 @@ def create_user_route():
     roles = ['Trainee']
   return add_user(email, roles, assistants)
 
-# TODO: SET COOKIE AND LOGIN RIGHT AWAY
 @users_bp.route('/register', methods=['POST'])
 def register_user_route():
   username = request.json.get('username')
   email = request.json.get('email')
   password = request.json.get('password')
+  remember = request.json.get('remember')
   
   if not email or not password:
     return jsonify({'error': 'Missing required fields.'}), 400
@@ -80,7 +81,7 @@ def register_user_route():
   if registered_user is None:
     return jsonify({'error': 'Failed to register user.'}), 400
   
-  return jsonify({'user': registered_user}), 200
+  return login_user(user=registered_user, remember=remember)
 
 @users_bp.route('/delete_user', methods=['POST'])
 @roles_required('admin', 'master')
@@ -196,30 +197,7 @@ def login_route():
   if not user or user is None:
     return jsonify({'message': 'Invalid credentials.'}), 401
   if check_password(user['password_hash'], password):
-    serializer = user_session_serializer
-    user_info = {
-        'Username': user['Username'],
-        'Email': user['Email'],
-        'Id': user['Id'],
-        'Roles': user['Roles'],
-        'Assistants':  user['Assistants'],
-        'Created': user['Created'],
-        'LastModified': user['LastModified'],
-    }
-    session_data = serializer.dumps(user_info)
-    print('user session token set.')
-
-    if isinstance(session_data, bytes):
-      session_data = session_data.decode('utf-8')
-
-    response = make_response(jsonify({'message': 'Login successful', 'user': user_info}), 200)
-    response.set_cookie('user_session',
-                        session_data,
-                        httponly=True,
-                        secure=True,
-                        samesite='none',
-                        max_age=None if not remember else 1209600)
-    return response
+    return login_user(user, remember=remember)
   else:
     return jsonify({'message': 'Invalid credentials.'}), 401
 

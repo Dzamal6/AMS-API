@@ -11,7 +11,7 @@ def oauth_sign_in(email: str):
         dict[str, any]: Dictionary with the authenticated user's information or None if the
         user's email wasn't found in the database.
     """
-    user = get_user(email=email)
+    user = get_user(credential=email)
     if not user:
         return None
     user_info = {

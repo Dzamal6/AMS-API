@@ -4,7 +4,9 @@ from flask.helpers import make_response
 import jwt
 from jwt import PyJWKClient
 from config import GOOGLE_CLIENT_ID, limiter, user_session_serializer
+from functions import login_user
 from services.auth_service import oauth_sign_in
+import logging
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -34,23 +36,10 @@ def google_login():
         }
         user_info = oauth_sign_in(oauth_user_info['email'])
         if not user_info:
+            logging.warning(f'Attempted login of unregistered user: {oauth_user_info['email']}, {oauth_user_info['name']}')
             return jsonify({'error': 'User does not exist.'}), 400
         else:
-            serializer = user_session_serializer
-            session_data = serializer.dumps(user_info)
-            print('user session token set.')
-
-            if isinstance(session_data, bytes):
-                session_data = session_data.decode('utf-8')
-
-            response = make_response(jsonify({'message': 'Login successful', 'user': user_info}), 200)
-            response.set_cookie('user_session',
-                                session_data,
-                                httponly=True,
-                                secure=True,
-                                samesite='none',
-                                max_age=1209600)
-            return response
+            return login_user(user=user_info, remember=True)
     except jwt.ExpiredSignatureError:
         return jsonify({'error': 'Token has expired'}), 400
     except jwt.InvalidTokenError as e:
@@ -58,4 +47,5 @@ def google_login():
     except OAuthError as e:
         return jsonify({'error': str(e)}), 400
     except Exception as e:
-        return jsonify({'error': f'An error occurred while processing the token: {str(e)}'}), 400
+        logging.error(msg=f'An error occurred while processing the token: {str(e)}')
+        return jsonify({'error': f'An error occurred while processing the token.'}), 400
