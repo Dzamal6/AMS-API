@@ -49,18 +49,18 @@ def create_user_route():
   """
   email = request.json.get("email")
   roles = request.json.get("roles")
-  assistants = request.json.get("assistants")
+  modules = request.json.get("modules")
   if not email or not roles:
     return jsonify({'error': 'Missing required fields.'}), 400
   
   exists = check_user_exists(email)
   
   if exists:
-    return jsonify({'error': 'User already exists'}), 400
+    return jsonify({'error': 'User already exists.'}), 400
 
   if not roles:
     roles = ['Trainee']
-  return add_user(email, roles, assistants)
+  return add_user(email, roles, modules)
 
 @users_bp.route('/register', methods=['POST'])
 def register_user_route():
@@ -148,15 +148,15 @@ def update_user_route():
   data = request.get_json()
   user_id = data['user_id']
   username = data['username']
-  password = data['password']
   roles = data['roles']
-  assistants = data['assistants']
-  if not check_user_exists(user_id):
+  modules = data['modules']
+  exists = check_user_exists(id=user_id)
+  if not exists:
     return jsonify({'error': 'User does not exist'}), 404
 
-  password = None if password == '' else hash_password(password)
+  # password = None if password == '' else hash_password(password)
     
-  update = update_user(user_id, username, password, roles, assistants)
+  update = update_user(user_id=user_id, username=username, roles=roles, modules=modules)
   
   if update:
     return jsonify({"message": "User updated successfully", 'user': update}), 200
@@ -221,6 +221,13 @@ def logout_route():
   """
   response = make_response(jsonify({'message': 'Logout successful'}), 200)
   response.set_cookie('user_session',
+                      '',
+                      max_age=0,
+                      secure=True,
+                      httponly=True,
+                      samesite='none',
+                     )
+  response.set_cookie('assistant_session',
                       '',
                       max_age=0,
                       secure=True,

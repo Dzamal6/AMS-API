@@ -5,7 +5,7 @@ import uuid
 import os
 import fitz  # PyMuPDF
 from docx import Document
-from functions import roles_required, get_assistant_session
+from functions import roles_required, get_module_session
 
 document_bp = Blueprint('documents', __name__)
 
@@ -32,20 +32,20 @@ def upload_document():
   Access Control:
       Requires one of the following roles: `Admin`, `Master`, `Worker`
   """
-  assistant_session = get_assistant_session()
+  module_session = get_module_session()
 
-  if assistant_session is None or not assistant_session:
-    return jsonify({'error': 'Invalid assistant session.'}), 400
+  if module_session is None or not module_session:
+    return jsonify({'error': 'Invalid module session.'}), 401
   
-  assistant_id = str(assistant_session['Id'])
+  module_id = str(module_session['Id'])
 
   files = request.files.getlist('file')
   if not files or any(file.filename == '' for file in files):
     return jsonify({'error': 'No file(s) provided'}), 400
 
-  assistant_ids = []
-  assistant_ids.append(assistant_id)
-  responses = upload_files(files, assistant_ids)
+  module_ids = []
+  module_ids.append(module_id)
+  responses = upload_files(files, module_ids)
 
   stripped_responses = []
   for status, response in responses:
@@ -61,7 +61,7 @@ def upload_document():
 
   return jsonify({"message": "Upload successful.", "details": stripped_responses}), 200
 
-# TODO: Retrieve only documents associated with current assistant_session assistant
+# TODO: Retrieve only documents associated with current module_session assistant
 #       Endpoint should be GET (change will break frontend)
 @document_bp.route('/document/get_all', methods=['POST'])
 @roles_required('admin', 'master', 'worker')
@@ -83,11 +83,11 @@ def get_documents():
       Requires at least one of the following roles: `Admin`, `Master`, `Worker`.
       Requires an assistant to be set prior to its call.
   """
-  assistant_session = get_assistant_session()
-  if assistant_session is None or not assistant_session:
-    return jsonify({'error': 'Invalid assistant session.'}), 400
+  module_session = get_module_session()
+  if module_session is None or not module_session:
+    return jsonify({'error': 'Invalid module session.'}), 401
   
-  files = get_all_files(str(assistant_session['Id']))
+  files = get_all_files(str(module_session['Id']))
   if files is None:
     return jsonify({'error':
                     'An error occurred while retrieving documents.'}), 400
@@ -118,13 +118,13 @@ def delete_document():
       Requires at least one of the following roles: `Admin`, `Master`, `Worker`
   """
   file_id = request.json.get('document_id')
-  assistant_session = get_assistant_session()
+  module_session = get_module_session()
 
-  if assistant_session is None or not assistant_session:
-    return jsonify({'error': 'Invalid assistant session.'}), 400
+  if module_session is None or not module_session:
+    return jsonify({'error': 'Invalid module session.'}), 401
   
-  assistant_id = str(assistant_session['Id'])
-  deleted = delete_doc(file_id, assistant_id=assistant_id)
+  module_id = str(module_session['Id'])
+  deleted = delete_doc(file_id, module_id=module_id)
   if deleted is None:
     return jsonify({'error':
                     'An error occurred while deleting the document.'}), 400

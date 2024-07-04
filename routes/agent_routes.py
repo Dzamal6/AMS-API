@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify
 from config import OPENAI_CLIENT as client
 from services.sql_service import upload_agent_metadata, retrieve_all_agents, delete_agent, update_agent, upload_files
-from functions import get_assistant_session
+from functions import get_module_session
 
 
 agent_bp = Blueprint('agent', __name__)
@@ -21,6 +21,7 @@ def create_agent():
       description (str): A description of the agent, for management purposes.
       instructions (str): Instructions defining the agent's behavior and presentation.
       model (str): The OpenAI model to use for the agent.
+      prompt_chaining (bool): A boolean value param to determine whether the agent should allow for prompt-chaining inside conversation flows.
 
   Returns:
       JSON response (dict): The created agent object along with a status message or an error message.
@@ -38,25 +39,26 @@ def create_agent():
   # file_ids = request.form.getlist('file_ids')
   description = request.form.get('description')
   instructions = request.form.get('instructions')
+  wrapper_prompt = request.form.get('wrapper_prompt')
   model = request.form.get('model')
-  assistant_session = get_assistant_session()
+  module_session = get_module_session()
 
   print(files)
 
-  if assistant_session is None or not assistant_session:
-    return jsonify({'error': 'Invalid assistant session.'}), 400
+  if module_session is None or not module_session:
+    return jsonify({'error': 'Invalid module session.'}), 401
   if not name or not description or not instructions or not model:
     return jsonify({'error': 'Missing required fields.'}), 400
     
-  assistant_id = str(assistant_session['Id'])
+  module_id = str(module_session['Id'])
   
   # if not file_ids:
   file_ids = []
   
   if files:
-    assistant_ids = []
-    assistant_ids.append(assistant_id)
-    uploaded_files = upload_files(files, assistant_ids)
+    module_ids = []
+    module_ids.append(module_id)
+    uploaded_files = upload_files(files, module_ids)
     print(uploaded_files)
   
     for status, response in uploaded_files:
@@ -66,12 +68,11 @@ def create_agent():
   agent_details = {
     "name": name,
     "system_prompt": instructions,
+    "wrapper_prompt": wrapper_prompt,
     "description": description,
     "model": model
   }
-  assistant_ids = []
-  assistant_ids.append(assistant_id)
-  upload = upload_agent_metadata(agent_details, assistant_ids, file_ids)
+  upload = upload_agent_metadata(agent_details, module_id, file_ids)
 
   if upload is None:
     return jsonify({'error': 'An error occurred while uploading the agent.'}), 400
@@ -101,11 +102,11 @@ def get_all_agents():
   Notes:
       - Calls `retrieve_all_agents` to fetch all agents from the database.
   """
-  assistant_session = get_assistant_session()
-  if not assistant_session:
+  module_session = get_module_session()
+  if not module_session:
     print("No assistant selected.")
     return jsonify({'error': 'Invalid assistant session.'}), 401
-  agents = retrieve_all_agents(assistant_session['Id'])
+  agents = retrieve_all_agents(module_session['Id'])
   if agents is None:
     return jsonify({'error': 'An error occurred while retrieving agents.'}), 400
 
@@ -179,14 +180,15 @@ def update_agent_route():
   file_ids = request.form.getlist('file_ids')
   description = request.form.get('description')
   instructions = request.form.get('instructions')
+  wrapper_prompt = request.form.get('wrapper_prompt')
   model = request.form.get('model')
 
-  assistant_session = get_assistant_session()
+  module_session = get_module_session()
 
-  if assistant_session is None or not assistant_session:
+  if module_session is None or not module_session:
     return jsonify({'error': 'Invalid assistant session.'}), 400
   
-  assistant_id = str(assistant_session['Id'])
+  module_id = str(module_session['Id'])
 
   if not agent_id or not name and not description and not instructions and not model:
     return jsonify({'error': 'Missing required fields.'}), 400
@@ -195,16 +197,16 @@ def update_agent_route():
     file_ids = []
 
   if files:
-    assistant_ids = []
-    assistant_ids.append(assistant_id)
-    uploaded_files = upload_files(files)
+    module_ids = []
+    module_ids.append(module_id)
+    uploaded_files = upload_files(files, module_ids=module_ids)
     print(f'UPLOADED FILES: {uploaded_files}')
 
     for status, response in uploaded_files:
       if status == 'success' and response['Id'] not in file_ids:
         file_ids.append(response['Id'])
   print(f'Updating agent with files: {[f"{file_id}" for file_id in file_ids]}')
-  update = update_agent(agent_id, name, description, instructions, model, file_ids)
+  update = update_agent(agent_id, name, description, instructions, wrapper_prompt, model, file_ids)
 
   if update is None:
     return jsonify({'error': 'An error occurred while updating the agent.'}), 400

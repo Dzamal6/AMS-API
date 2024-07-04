@@ -5,8 +5,8 @@ import jwt
 from jwt import PyJWKClient
 from config import GOOGLE_CLIENT_ID, limiter, user_session_serializer
 from functions import login_user
-from services.auth_service import oauth_sign_in
 import logging
+from services.sql_service import get_user
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -34,8 +34,8 @@ def google_login():
             "name": decoded_token.get("name"),
             "email": decoded_token.get("email"),
         }
-        user_info = oauth_sign_in(oauth_user_info['email'])
-        if not user_info:
+        user_info = get_user(oauth_user_info['email'])
+        if user_info is None:
             logging.warning(f'Attempted login of unregistered user: {oauth_user_info['email']}, {oauth_user_info['name']}')
             return jsonify({'error': 'User does not exist.'}), 400
         else:

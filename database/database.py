@@ -4,7 +4,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import NullPool 
 from config import POSTGRES_CONNECTION_STRING
 from database.base import Base
-from database.models import User, Role, Assistant, TokenUsage, Document
+from database.models import User, Role, Document
 from functions import hash_password
 import uuid
 from contextlib import contextmanager

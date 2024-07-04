@@ -20,6 +20,7 @@ LOGIN_KEY = os.environ['LOGIN_KEY']
 user_session_serializer = URLSafeSerializer(LOGIN_KEY)
 # Encrypt and decrypt assistant session cookie
 assistant_session_serializer = URLSafeSerializer(SECRET_KEY)
+module_session_serializer = URLSafeSerializer(SECRET_KEY)
 # Encrypt and decrypt chat session cookie
 chat_session_serializer = URLSafeSerializer(SECRET_KEY)
 

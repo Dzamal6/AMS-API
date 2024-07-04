@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Table, LargeBinary
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Table, LargeBinary, Boolean
 from sqlalchemy.orm import relationship, backref
 from database.base import Base
 from datetime import datetime
@@ -16,8 +16,8 @@ class User(Base):
   email = Column(String(30), unique=True, index=True)
   password_hash = Column(String(255), nullable=True)
   roles = relationship('Role', secondary='user_roles', back_populates='users')
-  assistants = relationship('Assistant',
-                            secondary='user_assistants',
+  modules = relationship('Module',
+                            secondary='user_module',
                             back_populates='users')
   transcripts = relationship('Transcript', backref='user', lazy='dynamic')
   chat_sessions = relationship('ChatSession', backref='user', lazy='dynamic')
@@ -36,39 +36,32 @@ class Role(Base):
   last_modified = Column(DateTime,
                          default=datetime.utcnow,
                          onupdate=datetime.utcnow)
-
-
-class Assistant(Base):
-  __tablename__ = 'assistants'
-  id = Column(UUID(as_uuid=True), primary_key=True, index=True)
-  name = Column(String, unique=True, index=True)
-  users = relationship('User',
-                       secondary='user_assistants',
-                       back_populates='assistants')
-  documents = relationship("Document",
-                           secondary='assistant_document',
-                           back_populates="assistants")
-  token = Column(String, unique=True, index=True)
-  vID = Column(String, unique=True, index=True)
-  projectID = Column(String, unique=True, index=True)
-  agents = relationship('Agent',
-                        secondary='agent_assistant',
-                        back_populates='assistants')
-  created = Column(DateTime, default=datetime.utcnow)
-  last_modified = Column(DateTime,
-                         default=datetime.utcnow,
-                         onupdate=datetime.utcnow)
+  
+class Module(Base):
+       __tablename__ = 'modules'
+       id = Column(UUID(as_uuid=True), primary_key=True, index=True)
+       name = Column(String(30), unique=True, index=True)
+       description = Column(String(200), unique=False, index=True)
+       flow_control = Column(String(10), unique=False, index=True)
+       voice = Column(Boolean, default=False)
+       convo_analytics = Column(Boolean, default=False)
+       summaries = Column(Boolean, default=False)
+       users = relationship('User',
+                            secondary='user_module',
+                            back_populates='modules')
+       documents = relationship("Document",
+                            secondary='document_module',
+                            back_populates="modules",)
+       agents = relationship('Agent', back_populates='module', cascade='all, delete-orphan')
+       created = Column(DateTime, default=datetime.utcnow)
+       last_modified = Column(DateTime,
+                            default=datetime.utcnow,
+                            onupdate=datetime.utcnow)
 
 
 class TokenUsage(Base):
   __tablename__ = 'token_usage'
   id = Column(UUID(as_uuid=True), primary_key=True, index=True)
-  assistantID = Column(UUID(as_uuid=True),
-                       ForeignKey('assistants.id', ondelete='CASCADE'),
-                       nullable=False)
-  assistant = relationship('Assistant',
-                           backref=backref('token_usages',
-                                           cascade='all, delete-orphan'))
   input_tokens = Column(Integer)
   output_tokens = Column(Integer)
   input_cost = Column(Integer)
@@ -99,9 +92,9 @@ class ChatSession(Base):
   userID = Column(UUID(as_uuid=True),
                   ForeignKey('users.id', ondelete='SET NULL'),
                   nullable=True)
-  assistantID = Column(UUID(as_uuid=True),
-                       ForeignKey('assistants.id', ondelete='SET NULL'),
-                       nullable=True)
+  moduleID = Column(UUID(as_uuid=True),
+                    ForeignKey('modules.id', ondelete='SET NULL'),
+                    nullable=True)
   transcripts = relationship('Transcript',
                              backref='chat_session',
                              lazy='dynamic',
@@ -121,9 +114,7 @@ class Document(Base):
   agents = relationship("Agent",
                         secondary='agent_file',
                         back_populates='documents')
-  assistants = relationship("Assistant",
-                            secondary='assistant_document',
-                            back_populates='documents',)
+  modules = relationship("Module", secondary='document_module', back_populates='documents')
   created = Column(DateTime, default=datetime.utcnow)
   last_modified = Column(DateTime,
                          default=datetime.utcnow,
@@ -135,39 +126,21 @@ class Agent(Base):
   id = Column(UUID(as_uuid=True), primary_key=True, index=True)
   name = Column(String, index=True, nullable=False)
   system_prompt = Column(String, nullable=False)
+  wrapper_prompt = Column(String, nullable=True)
   description = Column(String)
+  model = Column(String(24), nullable=False)
   documents = relationship("Document",
                            secondary='agent_file',
                            back_populates="agents")
-  assistants = relationship("Assistant", secondary='agent_assistant', back_populates='agents')
-  model = Column(String(24), nullable=False)
+  module_id = Column(UUID(as_uuid=True), ForeignKey('modules.id', ondelete='CASCADE'))
+  module = relationship("Module", back_populates='agents')
+  director = Column(Boolean, default=False)
+  prompt_chaining = Column(Boolean, default=False)
   created = Column(DateTime, default=datetime.utcnow)
   last_modified = Column(DateTime,
                          default=datetime.utcnow,
                          onupdate=datetime.utcnow)
-
-
-assistant_document = Table(
-    'assistant_document', Base.metadata,
-    Column('document_id', 
-           UUID(as_uuid=True),
-           ForeignKey('documents.id'), 
-           primary_key=True),
-    Column('assistant_id',
-           UUID(as_uuid=True),
-           ForeignKey('assistants.id'),
-           primary_key=True))
-
-agent_assistant = Table(
-    'agent_assistant', Base.metadata,
-    Column('agent_id',
-           UUID(as_uuid=True),
-           ForeignKey('agents.id'),
-           primary_key=True),
-    Column('assistant_id',
-           UUID(as_uuid=True),
-           ForeignKey('assistants.id'),
-           primary_key=True))
+  
 
 agent_file_table = Table(
     'agent_file', Base.metadata,
@@ -180,16 +153,17 @@ agent_file_table = Table(
            ForeignKey('documents.id'),
            primary_key=True))
 
-assistant_usage = Table(
-    'assistant_usage', Base.metadata,
-    Column('assistant_id',
-           UUID(as_uuid=True),
-           ForeignKey('assistants.id'),
-           primary_key=True),
-    Column('token_usage_id',
-           UUID(as_uuid=True),
-           ForeignKey('token_usage.id'),
-           primary_key=True))
+# can be changed to agent
+# assistant_usage = Table(
+#     'assistant_usage', Base.metadata,
+#     Column('assistant_id',
+#            UUID(as_uuid=True),
+#            ForeignKey('assistants.id'),
+#            primary_key=True),
+#     Column('token_usage_id',
+#            UUID(as_uuid=True),
+#            ForeignKey('token_usage.id'),
+#            primary_key=True))
 
 user_roles = Table(
     'user_roles', Base.metadata,
@@ -202,13 +176,26 @@ user_roles = Table(
            ForeignKey('roles.id'),
            primary_key=True))
 
-user_assistants = Table(
-    'user_assistants', Base.metadata,
-    Column('user_id',
-           UUID(as_uuid=True),
-           ForeignKey('users.id'),
-           primary_key=True),
-    Column('assistant_id',
-           UUID(as_uuid=True),
-           ForeignKey('assistants.id'),
-           primary_key=True))
+### MODULES TRANSITION
+
+document_module_table = Table(
+       'document_module', Base.metadata,
+       Column('document_id',
+              UUID(as_uuid=True),
+              ForeignKey('documents.id', ondelete='CASCADE'),
+              primary_key=True),
+       Column('module_id',
+              UUID(as_uuid=True),
+              ForeignKey('modules.id', ondelete='CASCADE'),
+              primary_key=True))
+
+user_module_table = Table(
+       'user_module', Base.metadata,
+       Column('user_id',
+              UUID(as_uuid=True),
+              ForeignKey('users.id'),
+              primary_key=True),
+       Column('module_id',
+              UUID(as_uuid=True),
+              ForeignKey('modules.id'),
+              primary_key=True))

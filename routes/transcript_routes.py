@@ -2,37 +2,36 @@ from flask import Blueprint, jsonify, current_app, request, json
 import requests
 from services.session_service import check_assistant_session
 from services.sql_service import get_user_chat_sessions, remove_chat_session 
-from services.voiceflow_service import retrieve_transcripts
 from config import VOICEFLOW_TRANSCRIPTS
-from functions import roles_required, get_user_info, get_assistant_session
+from functions import roles_required, get_user_info, get_module_session
 
 transcript_bp = Blueprint('blueprints', __name__)
 
-@transcript_bp.route('/get_transcripts', methods=['GET'])
-@roles_required('admin', 'master', 'worker')
-def get_transcripts():
-  """
-  Serves as a conduit to retrieve all transcripts associated with the assistant from the Voiceflow database.
+# @transcript_bp.route('/get_transcripts', methods=['GET'])
+# @roles_required('admin', 'master', 'worker')
+# def get_transcripts():
+#   """
+#   Serves as a conduit to retrieve all transcripts associated with the assistant from the Voiceflow database.
 
-  URL:
-  - GET /get_transcripts
+#   URL:
+#   - GET /get_transcripts
 
-  Returns:
-      JSON response (dict): A list of transcripts or an error message.
+#   Returns:
+#       JSON response (dict): A list of transcripts or an error message.
 
-  Status Codes:
-      200 OK: List of transcripts retrieved successfully.
-      400 Bad Request: An error occurred.
-      401 Unauthorized: Assistant session could not be resolved.
+#   Status Codes:
+#       200 OK: List of transcripts retrieved successfully.
+#       400 Bad Request: An error occurred.
+#       401 Unauthorized: Assistant session could not be resolved.
 
-  Notes:
-      This endpoint primarily acts as a middleman utilizing the `retrieve_transcripts` method
-      which is shared across several endpoints to standardize transcript retrieval.
+#   Notes:
+#       This endpoint primarily acts as a middleman utilizing the `retrieve_transcripts` method
+#       which is shared across several endpoints to standardize transcript retrieval.
 
-  Access Control:
-      Requires `Admin`, `Master`, or `Worker` roles to retrieve transcripts.
-  """
-  return retrieve_transcripts()
+#   Access Control:
+#       Requires `Admin`, `Master`, or `Worker` roles to retrieve transcripts.
+#   """
+#   return retrieve_transcripts()
 
 
 @transcript_bp.route('/update_transcript', methods=['POST'])
@@ -128,51 +127,51 @@ def get_transcript_dialog():
   else:
     return jsonify({'message': 'Transcript retrieval failed.'}), 400
 
-@transcript_bp.route('/get_user_transcripts', methods=['GET'])
-def get_user_transcripts():
-  """
-  Retrieves all transcripts related to a user and their selected assistant from the Voiceflow database.
+# @transcript_bp.route('/get_user_transcripts', methods=['GET'])
+# def get_user_transcripts():
+#   """
+#   Retrieves all transcripts related to a user and their selected assistant from the Voiceflow database.
 
-  URL:
-  - GET /get_user_transcripts
+#   URL:
+#   - GET /get_user_transcripts
 
-  Returns:
-      JSON response (dict): A list of transcripts or an error message.
+#   Returns:
+#       JSON response (dict): A list of transcripts or an error message.
 
-  Status Codes:
-      200 OK: List of transcripts retrieved successfully.
-      400 Bad Request: Assistant could not be resolved or an error occurred.
-      401 Unauthorized: User session could not be resolved.
+#   Status Codes:
+#       200 OK: List of transcripts retrieved successfully.
+#       400 Bad Request: Assistant could not be resolved or an error occurred.
+#       401 Unauthorized: User session could not be resolved.
 
-  Notes:
-      Transcripts are fetched based on the user and assistant sessions retrieved from cookies. 
-      The list is then filtered to include only those relevant to the current user.
-  """
-  user_info = get_user_info()
-  assistant_session = get_assistant_session()
+#   Notes:
+#       Transcripts are fetched based on the user and assistant sessions retrieved from cookies. 
+#       The list is then filtered to include only those relevant to the current user.
+#   """
+#   user_info = get_user_info()
+#   module_session = get_module_session()
 
-  if not user_info:
-    return jsonify({'message': 'Unauthenticated.'}), 401
+#   if not user_info:
+#     return jsonify({'message': 'Unauthenticated.'}), 401
 
-  if not assistant_session:
-    return jsonify({'message': 'Selected assistant could not be resolved.'}), 400
+#   if not module_session:
+#     return jsonify({'message': 'Selected assistant could not be resolved.'}), 400
   
-  response, status_code = retrieve_transcripts()
+#   # response, status_code = retrieve_transcripts()
 
-  if status_code != 200 or not response.get_json()['transcripts']:
-    return jsonify({'message': 'Could not retrieve transcripts.'}), status_code
+#   if status_code != 200 or not response.get_json()['transcripts']:
+#     return jsonify({'message': 'Could not retrieve transcripts.'}), status_code
 
-  user_sessions = get_user_chat_sessions(str(user_info['Id']), str(assistant_session['Id']))
+#   user_sessions = get_user_chat_sessions(str(user_info['Id']), str(module_session['Id']))
 
-  if user_sessions is None:
-    return jsonify({'message': 'Failed to resolve user history.'}), 400
+#   if user_sessions is None:
+#     return jsonify({'message': 'Failed to resolve user history.'}), 400
   
-  user_transcripts = []
-  for transcript in response.get_json()['transcripts']:
-    if transcript['sessionID'] in (session['Id'] for session in user_sessions):
-      user_transcripts.append(transcript)
+#   user_transcripts = []
+#   for transcript in response.get_json()['transcripts']:
+#     if transcript['sessionID'] in (session['Id'] for session in user_sessions):
+#       user_transcripts.append(transcript)
 
-  return jsonify({'transcripts': user_transcripts}), 200
+#   return jsonify({'transcripts': user_transcripts}), 200
 
 @transcript_bp.route('/delete_transcript', methods=['POST'])
 def delete_transcript_route():

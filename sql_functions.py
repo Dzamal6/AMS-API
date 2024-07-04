@@ -1,5 +1,5 @@
 from database.database import session_scope
-from database.models import User, Role, Assistant, Document
+from database.models import Agent, Module, User, Role, Document
 import uuid
 import hashlib
 
@@ -16,17 +16,17 @@ def get_roles_as_dicts(roles):
   """
   return [{"Id": str(role.id), "Name": role.name} for role in roles]
 
-def get_assistants_as_dicts(assistants):
+def get_modules_as_dicts(modules):
   """
-  Converts a list of assistant objects to a list of dictionaries containing assistant IDs and names.
+  Converts a list of module objects to a list of dictionaries containing module IDs and names.
 
   Parameters:
-      assistants (list): A list of assistant objects.
+      modules (list): A list of module objects.
 
   Returns:
-      list of dict: A list of dictionaries where each dictionary represents an assistant with `Id` and `Name` keys.
+      list of dict: A list of dictionaries where each dictionary represents an module with `Id` and `Name` keys.
   """
-  return [{"Id": str(assistant.id), "Name": assistant.name} for assistant in assistants]
+  return [{"Id": str(module.id), "Name": module.name} for module in modules]
 
 def compute_file_hash(doc):
     """ Compute SHA-256 hash for a file's content. """
@@ -39,15 +39,15 @@ def check_for_duplicate(hashes, session):
     existing_docs = session.query(Document).filter(Document.content_hash.in_(hashes)).all()
     return {doc.content_hash: doc for doc in existing_docs}
 
-def associate_assistants(existing_doc, assistant_ids, session):
-    """ Associate new assistants with an existing document if they are not already associated. """
-    existing_assistant_ids = {str(assistant.id) for assistant in existing_doc.assistants}
-    new_assistant_ids = set(assistant_ids) - existing_assistant_ids
+def associate_modules(existing_doc, module_ids, session):
+    """ Associate new modules with an existing document if they are not already associated. """
+    existing_module_ids = {str(module.id) for module in existing_doc.modules}
+    new_module_ids = set(module_ids) - existing_module_ids
     
-    if new_assistant_ids:
-        print(f'Associating file {existing_doc.id} with assistants {new_assistant_ids}. Existing assistant ids: {existing_assistant_ids}')
-        new_assistants = session.query(Assistant).filter(Assistant.id.in_(new_assistant_ids)).all()
-        existing_doc.assistants.extend(new_assistants)
+    if new_module_ids:
+        print(f'Associating file {existing_doc.id} with modules {new_module_ids}. Existing module ids: {existing_module_ids}')
+        new_modules = session.query(Module).filter(Module.id.in_(new_module_ids)).all()
+        existing_doc.modules.extend(new_modules)
         session.commit()
         
 def get_doc_content(doc):
@@ -55,3 +55,32 @@ def get_doc_content(doc):
     content = doc.read()
     doc.seek(0)
     return content
+
+def create_director_agent(agent_details: dict[str, str | bool],
+                          module_id: str, session):
+    """
+    Create a default director agent for directing conversations within a module.
+    
+    Parameters:
+        agent_details (dict): A dictionary containing the agent's details. NOTE director param doesn't need to be passed since it is set to True by the method. Only 'name', 'model' and 'system_prompt' are necessary.
+        module_id (str): The ID of the module to which the agent belongs.
+        session (Session): A database session object.
+    
+    Returns:
+        UUID: The Id of the created agent in the UUID format.
+    """
+    new_agent = Agent(id=uuid.uuid4(),
+                        name=agent_details['name'],
+                        system_prompt=agent_details['system_prompt'],
+                        description=agent_details['description'],
+                        model=agent_details['model'],
+                        director=True,
+                        module_id=uuid.UUID(module_id))
+    module = session.query(Module).filter(
+          Module.id == module_id).first()
+    new_agent.module = module
+
+    session.add(new_agent)
+    session.commit()
+    
+    return new_agent.id

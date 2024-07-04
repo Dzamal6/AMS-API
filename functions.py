@@ -6,7 +6,7 @@ import pytz
 from concurrent.futures import ThreadPoolExecutor
 from flask import Flask, request, jsonify, current_app
 import hashlib
-from config import user_session_serializer, assistant_session_serializer, chat_session_serializer
+from config import user_session_serializer, module_session_serializer, chat_session_serializer
 from functools import wraps
 import bcrypt
 from sqlalchemy.inspection import inspect
@@ -20,14 +20,14 @@ def get_project_headers():
   Returns:
       dict: Headers including Content-Type, Accept, and Authorization populated with the user's token.
   """
-  assistant_session = get_assistant_session()
-  token = ''
-  if assistant_session:
-    token = assistant_session['token']
+  # assistant_session = get_assistant_session()
+  # token = ''
+  # if assistant_session:
+  #   token = assistant_session['token']
   return {
       "accept": "application/json",
       "content-type": "application/json",
-      "Authorization": f"{token}"
+      "Authorization": "{token}"
   }
 
 
@@ -38,15 +38,15 @@ def get_dialog_headers():
   Returns:
       dict: Headers including Content-Type, Accept, VersionID set to 'production', and Authorization populated with the user's token.
   """
-  assistant_session = get_assistant_session()
-  token = ''
-  if assistant_session:
-    token = assistant_session['token']
+  # assistant_session = get_assistant_session()
+  # token = ''
+  # if assistant_session:
+  #   token = assistant_session['token']
   return {
     "accept": "application/json",
     "versionID": 'production',
     "content-type": "application/json",
-    "Authorization": f"{token}"
+    "Authorization": "{token}"
   }
 
 def validate_authorization_key(token):
@@ -115,6 +115,8 @@ def model_to_dict(model, include_relationships=False):
 
 def check_user_projects(projects, user_projects):
   """
+  DEPRECATED
+  
   Filters a list of projects to include only those that exist in a user's project list.
 
   Parameters:
@@ -130,9 +132,26 @@ def check_user_projects(projects, user_projects):
       out_projects.append(project)
   return out_projects
 
-def check_assistant_permission(projectId):
+def check_user_modules(modules, user_modules):
   """
-  Checks if the current user has permission to access a specific project based on their assistants' IDs.
+  Filters a list of modules to include only those that exist in a user's modules list.
+
+  Parameters:
+      modules (list of dict): List of all modules.
+      user_modules (list of dict): List of the user's modules.
+
+  Returns:
+      list of dict: Filtered list of modules that are included in the user's modules list.
+  """
+  out_modules = []
+  for module in modules:
+    if module['Id'] in [m['Id'] for m in user_modules]:
+      out_modules.append(module)
+  return out_modules
+
+def check_module_permission(moduleId: str):
+  """
+  Checks if the current user has permission to access a specific module based on their modules' IDs.
 
   Parameters:
       projectId (str): The project ID to check permissions for.
@@ -142,7 +161,7 @@ def check_assistant_permission(projectId):
   """
   user_info = get_user_info()
   
-  if user_info and any(a['Id'] == projectId for a in user_info['Assistants']):
+  if user_info and any(m['Id'] == moduleId for m in user_info['Modules']):
     return True
   return False
 
@@ -182,16 +201,16 @@ def get_user_info():
   if user_session:
     return user_session_serializer.loads(user_session)
 
-def get_assistant_session():
+def get_module_session():
   """
-  Retrieves the assistant session data from cookies.
+  Retrieves the module session data from cookies.
 
   Returns:
-      dict: The deserialized assistant session data or None if no assistant session is present in cookies.
+      dict: The deserialized module session data or None if no module session is present in cookies.
   """
-  assistant_session = request.cookies.get('assistant_session')
-  if assistant_session:
-    return assistant_session_serializer.loads(assistant_session)
+  module_session = request.cookies.get('module_session')
+  if module_session:
+    return module_session_serializer.loads(module_session)
 
 def check_admin():
   """
@@ -324,7 +343,7 @@ def login_user(user: dict[str, any] | dict, remember:bool):
       'Email': user['Email'],
       'Id': user['Id'],
       'Roles': user['Roles'],
-      'Assistants':  user['Assistants'],
+      'Modules': user['Modules'],
       'Created': user['Created'],
       'LastModified': user['LastModified'],
   }

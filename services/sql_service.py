@@ -1,11 +1,11 @@
 import logging
 from database.database import SessionLocal, session_scope
-from database.models import User, Role, Assistant, ChatSession, Transcript, Document, Agent, assistant_document, agent_file_table
+from database.models import Module, User, Role, ChatSession, Transcript, Document, Agent, agent_file_table, document_module_table
 from sqlalchemy.exc import SQLAlchemyError, NoResultFound
 import uuid
 from flask import jsonify
 from datetime import datetime
-from sql_functions import associate_assistants, check_for_duplicate, compute_file_hash, get_doc_content, get_roles_as_dicts, get_assistants_as_dicts
+from sql_functions import associate_modules, check_for_duplicate, compute_file_hash, create_director_agent, get_doc_content, get_modules_as_dicts, get_roles_as_dicts
 from functions import hash_password, is_email
 from werkzeug.utils import secure_filename
 import os
@@ -110,8 +110,6 @@ def get_all_chat_sessions():
           str(chat_session.id),
           "UserID":
           str(chat_session.userID),
-          "AssistantID":
-          str(chat_session.id),
           "Created":
           str(chat_session.created.strftime("%Y-%m-%d %H:%M:%S")),
           "LastModified":
@@ -164,13 +162,13 @@ def remove_chat_session(sessionID: str):
     return None
 
 
-def get_user_chat_sessions(user_id: str, assistant_id: str):
+def get_user_chat_sessions(user_id: str, module_id: str):
   """
-  Retrieves chat sessions for a specific user and assistant from the database.
+  Retrieves chat sessions for a specific user and module from the database.
 
   Parameters:
-      user_id (str): The user's ID.
-      assistant_id (str): The assistant's ID.
+      user_id (str): The user ID.
+      module_id (str): The module ID.
 
   Returns:
       list of dict or None: A list of dictionaries representing the user's chat sessions, or None if an error occurs.
@@ -179,14 +177,14 @@ def get_user_chat_sessions(user_id: str, assistant_id: str):
     with session_scope() as session:
       query_sessions = session.query(ChatSession).filter(
           ChatSession.userID == uuid.UUID(user_id),
-          ChatSession.assistantID == uuid.UUID(assistant_id)).all()
+          ChatSession.moduleID == uuid.UUID(module_id)).all()
       return [{
           "Id":
           str(session.id),
           "User":
           session.userID,
-          "Assistant":
-          session.assistantID,
+          "Module":
+          session.moduleID,
           'Created':
           session.created.strftime("%Y-%m-%d %H:%M:%S"),
           'LastModified':
@@ -201,13 +199,13 @@ def get_user_chat_sessions(user_id: str, assistant_id: str):
     return None
 
 
-def create_chat_session(user_id: str, assistant_id: str):
+def create_chat_session(user_id: str, module_id: str):
   """
   Creates a new chat session in the database.
 
   Parameters:
       user_id (str): The ID of the user involved in the chat session.
-      assistant_id (str): The ID of the assistant involved in the chat session.
+      module_id (str): The ID of the module involved in the chat session.
 
   Returns:
       dict or None: A dictionary containing the newly created chat session's ID, or None if the creation fails.
@@ -216,7 +214,7 @@ def create_chat_session(user_id: str, assistant_id: str):
     with session_scope() as session:
       chat_session = ChatSession(id=uuid.uuid4(),
                                  userID=user_id,
-                                 assistantID=assistant_id)
+                                 moduleID=module_id)
       session.add(chat_session)
       session.commit()
 
@@ -230,50 +228,171 @@ def create_chat_session(user_id: str, assistant_id: str):
     print(f"Error: {e}")
     return None
 
-
-def get_assistant_by_id(assistant_id):
+def get_module_by_id(module_id: str):
   """
-  Retrieves assistant details by assistant ID.
+  Retrieves module details by module ID.
 
   Parameters:
-      assistant_id (str): The unique identifier for the assistant.
+      module_id (str): The unique identifier for the module.
 
   Returns:
-      dict or None: A dictionary containing the assistant's details if found, None otherwise.
+      dict or None: A dictionary containing the module's details if found, None otherwise.
   """
   try:
     with session_scope() as session:
-      assistant = session.query(Assistant).filter_by(id=assistant_id).first()
-      if assistant:
+      module = session.query(Module).filter_by(id=module_id).first()
+      if module:
         return {
-            'Id': assistant.id,
-            'Name': assistant.name,
-            'Created': assistant.created,
-            'Token': assistant.token,
-            'ProjectId': assistant.projectID,
-            'VersionId': assistant.vID,
+            'Id': module.id,
+            'Name': module.name,
+            'Created': module.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
         }
       else:
         return None
-
   except SQLAlchemyError as e:
     print(f"Database Error: {e}")
-    return jsonify({'message': "Assistant could not be resolved."}), 400
+    return jsonify({'message': "Module could not be resolved."}), 400
 
   except Exception as e:
     print(f"Error: {e}")
     return jsonify({'message': 'An error occurred'}), 500
+  
 
-
-def add_user(email, roles, assistants):
+def get_all_modules():
   """
-  Adds a new user with specified roles and assistants to the database.
+  Retrieves all available modules from the database.
+  
+  Returns:
+      list of dict or None: A list of dictionaries representing all modules, or None if an error occurs.
+  """
+  try:
+    with session_scope() as session:
+      modules_query = session.query(Module).all()
+      modules = [{
+        'Id': str(module.id),
+        'Name': module.name,
+        'Created': module.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
+      } for module in modules_query]
+      return modules
+  except Exception as e:
+    print(f"Error: {e}")
+    return jsonify({'message': 'An error occurred'}), 500
+  
+
+def create_new_module(
+  name: str, 
+  description: str="None", 
+  flow_control: str="User", 
+  voice: bool=False, 
+  convo_analytics: bool=False, 
+  summaries: bool=False ):
+  """
+  Creates a new module in the database.
+  
+  Parameters:
+    name (str): The name of the new module.
+    description (str): The description of the new module.
+    flow_control (str): If the module conversations should be directed by AI or the user. The field accepts 'AI' for setting the module to be directed by AI and 'User' to set the module to be directed by the user. This is used e.g. when the user gives tasks that the module's AIs complete or when the user is not supposed to direct the conversation (trainings, interviews where the AI is interviewing the user). If not set, 'User' is assumed by default.
+    voice (bool): Whether the module conversations should be conducted via tts and stt or not. False by default.
+    convo_analytics (bool): Whether the module will analyze each saved conversation using AI. False by default.
+    summaries (bool): Whether the module will create a short summary of each saved conversation using AI. False by default.
+    
+  Returns:
+    JSON and literal: A JSON object containing the success literal and module details, or an error literal if an error occurs.
+  """
+  try:
+    with session_scope() as session:
+      existing_module = session.query(Module).filter(
+        Module.name == name).first()
+      
+      if existing_module is not None:
+        print(f"Module '{name}' already exists.")
+        return 'Module already exists', 409
+      
+      id = uuid.uuid4()
+      new_module = Module(id=id,
+                        name=name,
+                        description=description,
+                        flow_control=flow_control,
+                        voice=voice,
+                        convo_analytics=convo_analytics,
+                        summaries=summaries)
+      session.add(new_module)
+      session.commit()
+      
+      agent_details = {
+      "name": 'Director',
+      "system_prompt": 'You are a helpful AI assistant.',
+      "description": 'Director agent created by default for facilitating the base of conversations. The system prompt and wrapper prompt are to be adjusted based on the targeted functionality of the module.',
+      "model": 'gpt-3.5-turbo-1106',
+      }
+      create_director_agent(agent_details=agent_details, module_id=str(new_module.id), session=session)
+      
+      module_data = {
+        'Id': str(new_module.id),
+        'Name': new_module.name,
+        'Description': new_module.description,
+        'FlowControl': new_module.flow_control,
+        'Voice': new_module.voice,
+        'ConvoAnalytics': new_module.convo_analytics,
+        'Summaries': new_module.summaries,
+        'Created': new_module.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
+        'LastModified': new_module.last_modified.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
+      }
+      return module_data, 201
+  except Exception as e:
+    print(f"An error occurred: {e}")
+    return None, 400
+    
+
+def delete_module(module_id: str):
+  """
+  Deletes a module from the database.
+  
+  Parameters:
+    module_id (str): The unique identifier of the module to be deleted.
+    
+  Returns:
+    str or None: The unique identifier of the deleted module or None if the deletion failed.
+  """
+  try:
+    with session_scope() as session:
+      module = session.query(Module).filter(Module.id == module_id).first()
+      
+      if not module:
+                logging.error(f'Module with ID: {module_id} not found.')
+                return None
+              
+      orphaned_documents = []
+      for document in module.documents:
+        other_modules = session.query(Module).join(Module.documents).filter(Document.id == document.id).filter(Module.id != module_id).all()
+        if not other_modules:
+          orphaned_documents.append(document)
+          
+      for document in orphaned_documents:
+        session.delete(document)
+      
+      session.delete(module)
+      session.commit()
+      
+      return module_id
+  except SQLAlchemyError as e:
+    logging.error(f'Failed to delete module with ID: {module_id}. {e}')
+    return None
+  except Exception as e:
+    logging.error(f'Failed to delete module with ID: {module_id}. {e}')
+    return None
+
+
+def add_user(email, roles, modules):
+  """
+  Adds a new user with specified roles and modules to the database.
 
   Parameters:
       username (str): The username for the new user.
       password (str): The password for the new user.
       roles (list of str): A list of role IDs that the user will be associated with.
-      assistants (list of str): A list of assistant IDs that the user will be associated with.
+      modules (list of str): A list of module IDs that the user will be associated with.
 
   Returns:
       JSON or None: A JSON object containing the registration details and success message, or an error message if the registration fails.
@@ -285,15 +404,13 @@ def add_user(email, roles, assistants):
   try:
     with session_scope() as session:
       roles_uuids = [uuid.UUID(role_id) for role_id in roles]
-      assistants_uuids = [
-          uuid.UUID(assistant_id) for assistant_id in assistants
-      ]
+      module_uuids = [uuid.UUID(module_id) for module_id in modules]
       new_user = User(id=id,
                       email=email,
                       roles=session.query(Role).filter(
                           Role.id.in_(roles_uuids)).all(),
-                      assistants=session.query(Assistant).filter(
-                          Assistant.id.in_(assistants_uuids)).all())
+                      modules=session.query(Module).filter(
+                          Module.id.in_(module_uuids)).all())
 
       session.add(new_user)
       session.commit()
@@ -311,13 +428,16 @@ def add_user(email, roles, assistants):
               new_user.email,
               "Roles":
               get_roles_as_dicts(new_user.roles),
-              "Assistants":
-              get_assistants_as_dicts(new_user.assistants)
+              "Modules":
+              get_modules_as_dicts(new_user.modules)
           }
       }), 200
 
   except SQLAlchemyError as e:
     print(f"Error: {e}")
+    return jsonify({'message': "Failed to create user."}), 400
+  except Exception as e:
+    print(f"Error when creating user: {e}")
     return jsonify({'message': "Failed to create user."}), 400
   
 
@@ -342,8 +462,8 @@ def register_user(username: str, email: str, password_hash: str):
         "LastModified": user.last_modified.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
         "Roles":
         get_roles_as_dicts(user.roles),
-        "Assistants":
-        get_assistants_as_dicts(user.assistants)
+        "Modules":
+        get_modules_as_dicts(user.modules)
       }
       
       return registered_user
@@ -385,22 +505,32 @@ def remove_user(user_id):
     return jsonify({'message': 'An error occurred'}), 500
 
 
-def check_user_exists(email):
+def check_user_exists(email:str=None, id:str=None):
   """
-  Checks if a user exists in the database based on the user email.
+  Checks if a user exists in the database based on the user email or id.
 
   Parameters:
       email (str): The email of the user to be checked.
+      id (str): The ID of the user to be checked.
 
   Returns:
-      bool: True if the user exists, False otherwise.
+      bool or None: True if the user exists, False otherwise. If neither email or id is provided, None is returned.
   """
   try:
     with session_scope() as session:
-      result = session.query(User).filter_by(email=email).first()
-      if result is None or not result:
-        return False
-      return True
+      if id is not None:
+        user = session.query(User).filter(User.id == id).first()
+        if user is None or not user:
+          return False
+        return True
+      elif email is not None:
+        result = session.query(User).filter_by(email=email).first()
+        if result is None or not result:
+          return False
+        return True
+      elif email is None and id is None:
+        logging.error('[check_user_exists()] - Missing required fields.')
+        return None
   except Exception as e:
     print(f"Error: {e}")
     return False
@@ -441,51 +571,26 @@ def get_user_roles(user_roles_ids):
   except Exception as e:
     print(f"An error occured: {e}")
     return []
-
-
-def get_all_assistants():
+  
+def get_user_modules(user_modules_ids):
   """
-  Retrieves all assistants from the database.
-
-  Returns:
-      list of dict or None: A list of dictionaries representing all assistants, or None if an error occurs.
-  """
-  try:
-    with session_scope() as session:
-      assistants_query = session.query(Assistant).all()
-      assistants = [{
-          "Id":
-          str(assistant.id),
-          "Name":
-          assistant.name,
-          "Created":
-          assistant.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
-      } for assistant in assistants_query]
-      return assistants
-  except Exception as e:
-    print(f"An error occured: {e}")
-    return []
-
-
-def get_user_assistants(user_assistants_ids):
-  """
-  Retrieves specific assistants based on a list of assistant IDs.
+  Retrieves specific modules based on a list of module IDs.
 
   Parameters:
-      user_assistants_ids (list of str): A list of assistant IDs.
+      user_modules_ids (list of str): A list of module IDs.
 
   Returns:
-      list of dict or None: A list of dictionaries representing the assistants, or None if an error occurs.
+      list of dict or None: A list of dictionaries representing the modules, or None if an error occurs.
   """
   try:
     with session_scope() as session:
-      assistants = session.query(Assistant).filter(
-          Assistant.id.in_(user_assistants_ids)).all()
-      user_assistants = [{
-          "Id": str(assistant.id),
-          "Name": assistant.name
-      } for assistant in assistants]
-      return user_assistants
+      modules = session.query(Module).filter(
+          Module.id.in_(user_modules_ids)).all()
+      user_modules = [{
+          "Id": str(module.id),
+          "Name": module.name
+      } for module in modules]
+      return user_modules
   except Exception as e:
     print(f"An error occured: {e}")
     return []
@@ -493,40 +598,40 @@ def get_user_assistants(user_assistants_ids):
 
 def get_all_users():
   """
-  Retrieves all users from the database along with their associated roles and assistants.
+  Retrieves all users from the database along with their associated roles and modules.
 
   Returns:
-      list of dict or None: A list of dictionaries representing all users, their roles, and assistants, or None if an error occurs.
+      list of dict or None: A list of dictionaries representing all users, their roles, and modules, or None if an error occurs.
   """
   try:
     with session_scope() as session:
       users = session.query(User).all()
 
       all_roles = session.query(Role).all()
-      all_assistants = session.query(Assistant).all()
+      all_modules = session.query(Module).all()
 
       roles_dict = {role.id: role for role in all_roles}
-      assistants_dict = {
-          assistant.id: assistant
-          for assistant in all_assistants
+      modules_dict = {
+          module.id: module
+          for module in all_modules
       }
 
       users_data = []
       for user in users:
         user_roles_ids = [role.id for role in user.roles]
-        user_assistants_ids = [assistant.id for assistant in user.assistants]
+        user_modules_ids = [module.id for module in user.modules]
 
         user_roles = [{
             "Id": str(role.id),
             "Name": role.name
         } for role_id in user_roles_ids for role in (roles_dict.get(role_id), )
                       if role]
-        user_assistants = [
+        user_modules = [
             {
-                "Id": str(assistant.id),
-                "Name": assistant.name
-            } for assistant_id in user_assistants_ids
-            for assistant in (assistants_dict.get(assistant_id), ) if assistant
+                "Id": str(module.id),
+                "Name": module.name
+            } for module_id in user_modules_ids
+            for module in (modules_dict.get(module_id), ) if module
         ]
 
         users_data.append({
@@ -538,8 +643,8 @@ def get_all_users():
             user.email,
             "Roles":
             user_roles,
-            "Assistants":
-            user_assistants,
+            "Modules":
+            user_modules,
             "Created":
             user.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
             "LastModified":
@@ -556,7 +661,7 @@ def get_user(credential: str):
   Retrieves a user by email or username from the database.
 
   Parameters:
-      credential (str): The email of the user to be retrieved.
+      credential (str): The email or username of the user to be retrieved.
 
   Returns:
       dict or None: A dictionary containing the user's details if found, or an empty dictionary if the user is not found, or None if an error occurs.
@@ -578,9 +683,8 @@ def get_user(credential: str):
             user.email,
             'Roles':
             get_user_roles([role.id for role in user.roles]),
-            'Assistants':
-            get_user_assistants(
-                [assistant.id for assistant in user.assistants]),
+            'Modules': 
+            get_user_modules([module.id for module in user.modules]),
             'password_hash':
             user.password_hash,
             'Created':
@@ -591,93 +695,17 @@ def get_user(credential: str):
 
         return user_data
       else:
-        return {}
+        return None
   except Exception as e:
     print(f"An error occured: {e}")
-    return {}
-
-
-def add_assistant(project_token, project_name, project_vID, project_id):
-  """
-  Adds a new Voiceflow assistant's metadata to the database.
-
-  Parameters:
-      project_token (str): The token associated with the project for the new assistant.
-      project_name (str): The name of the new assistant.
-      project_vID (str): The version ID of the project.
-      project_id (str): The project ID of the new assistant.
-
-  Returns:
-      JSON or None: A JSON object containing the success message and assistant details, or an error message if an error occurs.
-  """
-  try:
-    with session_scope() as session:
-      existing_assistant = session.query(Assistant).filter(
-          Assistant.name == project_name).first()
-
-      if existing_assistant:
-        print(f"Assistant {project_name} already exists.")
-        return jsonify({'error': 'Assistant already exists.'}), 400
-
-      id = uuid.uuid4()
-      new_assistant = Assistant(id=id,
-                                name=project_name,
-                                token=project_token,
-                                vID=project_vID,
-                                projectID=project_id)
-      session.add(new_assistant)
-      session.commit()
-
-      assistant_data = {
-          'Id': str(new_assistant.id),
-          'Name': new_assistant.name,
-          'Created':
-          new_assistant.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
-      }
-
-      return jsonify({
-          'message': 'Assistant added to the database.',
-          'data': assistant_data
-      }), 200
-
-  except Exception as e:
-    print(f"An error occurred: {e}")
-    return jsonify({'error':
-                    "An error occurred while adding the assistant."}), 400
-
-
-def delete_assistant(project_name):
-  """
-  Deletes an assistant from the database based on the assistant's name.
-
-  Parameters:
-      project_name (str): The name of the assistant to be deleted.
-
-  Returns:
-      bool: True if the deletion was successful, False otherwise.
-  """
-  try:
-    with session_scope() as session:
-      result = session.query(Assistant).filter_by(name=project_name).first()
-
-      if result:
-        session.delete(result)
-        session.commit()
-        print(f"Deleted assistant {project_name}")
-        return True
-      else:
-        print(f"Assistant {project_name} not found")
-        return False
-  except Exception as e:
-    print(f"An error occurred: {e}")
-    return False
-
+    return None
+  
 
 def update_user(user_id,
                 username=None,
                 password=None,
                 roles=None,
-                assistants=None):
+                modules=None):
   """
   Updates a user's details in the database.
 
@@ -686,7 +714,7 @@ def update_user(user_id,
       username (str, optional): The new username for the user.
       password (str, optional): The new password for the user.
       roles (list of str, optional): A list of new role IDs to be associated with the user.
-      assistants (list of str, optional): A list of new assistant IDs to be associated with the user.
+      modules (list of str, optional): A list of new module IDs to be associated with the user.
 
   Returns:
       dict or None: A dictionary containing the updated user's details if the update is successful, or None if the user is not found or an error occurs.
@@ -702,15 +730,18 @@ def update_user(user_id,
         if password is not None:
           user.password_hash = password
         if roles is not None:
+          print(roles)
           roles_uuids = [uuid.UUID(role_id) for role_id in roles]
+          print(roles_uuids)
           user.roles = session.query(Role).filter(
               Role.id.in_(roles_uuids)).all()
-        if assistants is not None:
-          assistants_uuids = [
-              uuid.UUID(assistant_id) for assistant_id in assistants
+          print(get_roles_as_dicts(user.roles))
+        if modules is not None:
+          modules_uuids = [
+              uuid.UUID(module_id) for module_id in modules
           ]
-          user.assistants = session.query(Assistant).filter(
-              Assistant.id.in_(assistants_uuids)).all()
+          user.modules = session.query(Module).filter(
+              Module.id.in_(modules_uuids)).all()
 
         current_time = datetime.now()
         session.commit()
@@ -720,8 +751,9 @@ def update_user(user_id,
             "Created": user.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
             "LastModified": current_time.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
             "Username": user.username,
+            "Email": user.email,
             "Roles": get_roles_as_dicts(user.roles),
-            "Assistants": get_assistants_as_dicts(user.assistants)
+            "Modules": get_modules_as_dicts(user.modules)
         }
 
         return updated_user
@@ -732,7 +764,7 @@ def update_user(user_id,
     print(f"An error occurred: {e}")
     return None
 
-def upload_files(files, assistant_ids: list[str]=None):
+def upload_files(files, module_ids: list[str]=None):
   """
   Uploads files to the database, checking for duplicates based on file content hash.
 
@@ -755,8 +787,8 @@ def upload_files(files, assistant_ids: list[str]=None):
         if doc_hash in existing_docs:
           existing_doc = existing_docs[doc_hash]
           print(f"Duplicate found, including existing file in response: {existing_doc.id}")
-          if assistant_ids is not None:
-            associate_assistants(existing_doc, assistant_ids, session)
+          if module_ids is not None:
+            associate_modules(existing_doc, module_ids, session)
           responses.append(('success', {
               'message': f'Duplicate document found for file {file_id}, including existing file.',
               "Id": existing_doc.id,
@@ -768,9 +800,9 @@ def upload_files(files, assistant_ids: list[str]=None):
           continue
 
         document = Document(id=file_id, name=filename, content_hash=doc_hash, content=doc_content)
-        if assistant_ids is not None:
-          assistants = session.query(Assistant).filter(Assistant.id.in_(assistant_ids)).all()
-          document.assistants = assistants
+        if module_ids is not None:
+          modules = session.query(Module).filter(Module.id.in_(module_ids)).all()
+          document.modules = modules
           
         session.add(document)
         session.commit()
@@ -789,19 +821,19 @@ def upload_files(files, assistant_ids: list[str]=None):
   return responses
 
 
-def get_all_files(assistant_id: str):
+def get_all_files(module_id: str):
   """
-  Retrieves all files related to the set assistant from the database.
+  Retrieves all files related to the set module from the database.
 
   Parameters:
-      assistant_id (string): The unique identifier of the selected assistant.
+      module_id (string): The unique identifier of the selected module.
 
   Returns:
       list of dict or None: A list of dictionaries representing all stored files, or None if an error occurs.
   """
   try:
     with session_scope() as session:
-      docs = session.query(Document).join(Document.assistants).filter(Assistant.id == assistant_id).all()
+      docs = session.query(Document).join(Document.modules).filter(Module.id == module_id).all()
       return [{
           "Id":
           str(doc.id),
@@ -817,14 +849,14 @@ def get_all_files(assistant_id: str):
     return None
 
 
-def delete_doc(docId, assistant_id: str):
+def delete_doc(docId, module_id: str):
   """
-    Deletes a specific document from the database or removes an assistant's association
-    with that document based on the document's ID and the provided assistant ID.
+    Deletes a specific document from the database or removes a module's association
+    with that document based on the document's ID and the provided module ID.
 
     Parameters:
         docId (str): The unique identifier of the document to be deleted.
-        assistant_id (str): The ID of the assistant for whom the document association should be removed.
+        module_id (str): The ID of the module for whom the document association should be removed.
 
     Returns:
         str or None: The ID of the deleted document if successful, or None otherwise.
@@ -836,17 +868,17 @@ def delete_doc(docId, assistant_id: str):
         print(f"Document with ID {docId} not found")
         return None
 
-      if len(document.assistants) > 1:
-        assoc_query = session.query(assistant_document).filter(
-          assistant_document.c.document_id == docId,
-          assistant_document.c.assistant_id == assistant_id)
+      if len(document.modules) > 1:
+        assoc_query = session.query(document_module_table).filter(
+          document_module_table.c.document_id == docId,
+          document_module_table.c.module_id == module_id)
         assoc_entry = assoc_query.first()
         if assoc_entry:
             assoc_query.delete()
             session.commit()
-            print(f"Removed association for assistant ID {assistant_id} from document ID {docId}")
+            print(f"Removed association for module ID {module_id} from document ID {docId}")
         else:
-            print(f"No association found for assistant ID {assistant_id} with document ID {docId}")
+            print(f"No association found for module ID {module_id} with document ID {docId}")
         return docId
       else:
         session.delete(document)
@@ -953,13 +985,13 @@ def get_agent_data(agentId):
 
 
 def upload_agent_metadata(agent_details: dict[str, str],
-                          assistant_ids: list[str], document_ids: list[str]):
+                          module_id: str, document_ids: list[str]=None):
   """
-  Creates a new agent in the database with specified details and associations to assistants and documents.
+  Creates a new agent in the database with specified details and associations to modules and documents.
 
   Parameters:
       agent_details (dict[str, str]): A dictionary containing the agent's details such as name, system prompt, and description.
-      assistant_ids (list of str): A list of assistant IDs to associate with the agent.
+      module_id (str): A list of modules IDs to associate with the agent.
       document_ids (list of str): A list of document IDs to associate with the agent.
 
   Returns:
@@ -970,13 +1002,15 @@ def upload_agent_metadata(agent_details: dict[str, str],
       new_agent = Agent(id=uuid.uuid4(),
                         name=agent_details['name'],
                         system_prompt=agent_details['system_prompt'],
+                        wrapper_prompt=agent_details['wrapper_prompt'],
                         description=agent_details['description'],
-                        model=agent_details['model'])
-      assistants = session.query(Assistant).filter(
-          Assistant.id.in_(assistant_ids)).all()
-      new_agent.assistants = assistants
+                        model=agent_details['model'],
+                        module_id=uuid.UUID(module_id))
+      module = session.query(Module).filter(
+          Module.id == module_id).first()
+      new_agent.module = module
 
-      if document_ids is not []:
+      if document_ids is not [] and not None:
         documents = session.query(Document).filter(
             Document.id.in_(document_ids)).all()
         new_agent.documents = documents
@@ -989,6 +1023,7 @@ def upload_agent_metadata(agent_details: dict[str, str],
           "Name": new_agent.name,
           "Model": new_agent.model,
           "Instructions": new_agent.system_prompt,
+          "WrapperPrompt": new_agent.wrapper_prompt,
           "Description": new_agent.description,
           "Documents": [{"Id": str(doc.id), "Name": doc.name} for doc in new_agent.documents],
           "Created": new_agent.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
@@ -1000,22 +1035,22 @@ def upload_agent_metadata(agent_details: dict[str, str],
     return None
 
 
-def retrieve_all_agents(assistant_id: str):
+def retrieve_all_agents(module_id: str):
   """
-  Retrieves all agents related to the selected assistant from the database.
+  Retrieves all agents related to the selected module from the database.
 
   Parameters:
-    assistant_id (str): The ID of the assistant to filter agents by.
+    module_id (str): The ID of the module to filter agents by.
 
   Returns:
       list of dict or None: A list of dictionaries representing all agents, or None if an error occurs.
 
   Access Control:
-      Requires an assistant to be set prior to its call.
+      Requires a module to be set prior to its call.
   """
   try:
     with session_scope() as session:
-      agents = session.query(Agent).join(Agent.assistants).filter(Assistant.id == assistant_id).all()
+      agents = session.query(Agent).join(Agent.module).filter(Module.id == module_id).all()
       
       return [{
         "Id": agent.id,
@@ -1023,6 +1058,9 @@ def retrieve_all_agents(assistant_id: str):
         "Model": agent.model,
         "Instructions": agent.system_prompt,
         "Description": agent.description,
+        "WrapperPrompt": agent.wrapper_prompt,
+        "Director": agent.director,
+        "PromptChaining": agent.prompt_chaining,
         "Documents": [{"Id": str(doc.id), "Name": doc.name} for doc in agent.documents],
         "Created": agent.created,
         "LastModified": agent.last_modified
@@ -1059,7 +1097,7 @@ def delete_agent(agent_id):
     print(f"An error occurred: {e}")
     return None
 
-def update_agent(agent_id, name, description, instructions, model, document_ids):
+def update_agent(agent_id, name, description, instructions, wrapper_prompt, model, document_ids):
   """
   Updates an existing agent's details in the database.
 
@@ -1068,6 +1106,7 @@ def update_agent(agent_id, name, description, instructions, model, document_ids)
       name (str): The new name for the agent.
       description (str): A new description of the agent.
       instructions (str): Updated system instructions for the agent.
+      wrapper_prompt (str): A prompt that is set to be sent to the LLM with each user message. It acts as a 'wrapper' for user messages.
       model (str): The model identifier for the agent.
       document_ids (list of str): A list of new document IDs to associate with the agent.
 
@@ -1088,6 +1127,7 @@ def update_agent(agent_id, name, description, instructions, model, document_ids)
       result.name = name
       result.description = description
       result.system_prompt = instructions
+      result.wrapper_prompt = wrapper_prompt
       result.model = model
       session.commit()
       return {
@@ -1097,6 +1137,9 @@ def update_agent(agent_id, name, description, instructions, model, document_ids)
         "Instructions": result.system_prompt,
         "Model": result.model,
         "Documents": [{"Id": str(doc.id), "Name": doc.name} for doc in result.documents],
+        "Director": result.director,
+        "WrapperPrompt": result.wrapper_prompt,
+        "PromptChaining": result.prompt_chaining,
         "Created": result.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
         "LastModified": result.last_modified.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
       }
