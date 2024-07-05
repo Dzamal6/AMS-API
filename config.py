@@ -19,10 +19,13 @@ LOGIN_KEY = os.environ['LOGIN_KEY']
 # Encrypt and decrypt user cookie
 user_session_serializer = URLSafeSerializer(LOGIN_KEY)
 # Encrypt and decrypt assistant session cookie
-assistant_session_serializer = URLSafeSerializer(SECRET_KEY)
+assistant_session_serializer = URLSafeSerializer(SECRET_KEY) # DEPRECATED
+# Encrypt and decrypt assistant module cookie
 module_session_serializer = URLSafeSerializer(SECRET_KEY)
 # Encrypt and decrypt chat session cookie
 chat_session_serializer = URLSafeSerializer(SECRET_KEY)
+# Encrypt and decrypt agent session cookie
+agent_session_serializer = URLSafeSerializer(SECRET_KEY)
 
 # OAI API key for communication with the OpenAI API
 OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]

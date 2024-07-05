@@ -227,7 +227,7 @@ def logout_route():
                       httponly=True,
                       samesite='none',
                      )
-  response.set_cookie('assistant_session',
+  response.set_cookie('module_session',
                       '',
                       max_age=0,
                       secure=True,

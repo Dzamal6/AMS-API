@@ -1,12 +1,15 @@
+import logging
 from flask import jsonify
+from flask.helpers import make_response
 import tiktoken
 import openai
 from openai import BadRequestError, NotFoundError
 import os
 import json
 from packaging import version
-from config import OPENAI_CLIENT as client
+from config import OPENAI_CLIENT as client, chat_session_serializer
 import time
+from functions import get_chat_session
 from services.sql_service import get_agent_data
 
 required_version = version.parse("1.1.1")
@@ -105,7 +108,7 @@ def create_agent(agent_id):
       agent_id (str): The unique identifier for the agent, used to store or retrieve the agent's data locally.
 
   Returns:
-      str or None: The unique identifier of the created or retrieved agent, or None if creation failed.
+      [str, list] or None: The unique identifier of the created or retrieved agent, or None if creation failed.
 
   Raises:
       OSError: If necessary directories or files cannot be created.
@@ -122,18 +125,17 @@ def create_agent(agent_id):
       >>> print(agent_id)
       'unique-agent-id'
   """
-  path = f'/tmp/agents/{agent_id}.json'
 
   agent_data = get_agent_data(agent_id)
   file_ids = []
   if not agent_data or agent_data is None:
     return None
+  
+  chat_session = get_chat_session()
 
-  if os.path.exists(path):
-    with open(path, 'r') as file:
-      agent_details = json.load(file)
-      agent_id = str(agent_details['agent_id'])
-      print("Loaded existing assistant ID")
+  if chat_session is not None and chat_session.get('agent_id') == agent_data['Id']:
+    oai_agent_id = str(chat_session['agent_id'])
+    print("Loaded existing assistant ID")
   else:
     if len(agent_data['Documents_IO']) > 0:
       files = agent_data['Documents_IO']
@@ -160,17 +162,9 @@ def create_agent(agent_id):
                                               instructions=agent_data['Instructions'],
                                               model=agent_data['Model']
                                              )
+    oai_agent_id = agent.id
 
-    if not os.path.exists('/tmp/agents'):
-      os.makedirs('/tmp/agents')
-
-    with open(path, 'w') as file:
-      json.dump({'agent_id': agent.id, 'file_ids': file_ids}, file)
-      print('Created a new assistant and saved the ID')
-
-    agent_id = agent.id
-
-  return agent_id
+  return oai_agent_id, file_ids
 
 def delete_agent(agent_id: str):
   """
@@ -190,18 +184,16 @@ def delete_agent(agent_id: str):
       - Utilizes the `client.beta.assistants.delete` API call to delete the agent from the server.
       - Checks for the agent's existence by looking for a corresponding local file.
   """
-  path = f'/tmp/agents/{agent_id}.json'
-
-  if not os.path.exists(path):
+  chat_session = get_chat_session()
+  
+  if chat_session is None:
     return None
+  
+  if chat_session['agent_id'] is not agent_id:
+    logging.error(f'Could not find existing agent {agent_id}')
 
-  with open(path, 'r') as file:
-    agent_details = json.load(file)
-    
-  os.remove(path)
-  print(f'Removed temp file: {path}')
-  if agent_details['file_ids'] is not []:
-    for file_id in agent_details['file_ids']:
+  if chat_session['file_ids'] is not []:
+    for file_id in chat_session['file_ids']:
       try:
         client.files.delete(file_id)
       except NotFoundError as nf:
@@ -212,9 +204,10 @@ def delete_agent(agent_id: str):
         continue
       print(f'Removed file: {file_id} from OpenAI.')
     
-    response = client.beta.assistants.delete(assistant_id=agent_details['agent_id'])
+    response = client.beta.assistants.delete(assistant_id=chat_session['agent_id'])
 
   if response.deleted:
     return response.id
   else:
+    logging.error(f'Failed to delete agent with Id {agent_id}')
     return None

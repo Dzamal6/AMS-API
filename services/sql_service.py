@@ -1147,3 +1147,43 @@ def update_agent(agent_id, name, description, instructions, wrapper_prompt, mode
   except Exception as e:
     print(f"An error occurred: {e}")
     return None
+  
+  
+def get_director_agent_info(module_id: str):
+  """
+  Retrieves the details of the director agent.
+  
+  Parameters:
+    module_id (str): The ID of the module the agent belongs to.
+    
+  Returns:
+    dict or None: Director agent information or None if the operation fails.
+  """
+  try:
+    with session_scope() as session:
+      result = session.query(Agent).filter_by(module_id=module_id, director=True).first()
+      if not result:
+        logging.error(f"Failed to retrieve director agent for module {module_id}")
+        return None
+      
+      return {
+        "Id": str(result.id),
+        "Name": result.name,
+        "Description": result.description,
+        "Instructions": result.system_prompt,
+        "Model": result.model,
+        "Documents": [{"Id": str(doc.id), "Name": doc.name} for doc in result.documents],
+        "Director": result.director,
+        "WrapperPrompt": result.wrapper_prompt,
+        "PromptChaining": result.prompt_chaining,
+        "Created": result.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
+        "LastModified": result.last_modified.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
+      }
+  
+  except SQLAlchemyError as e:
+    logging.error(f"An error occurred while retrieving director agent for module {module_id}: {e}")
+    return None
+  except Exception as e:
+    logging.error(f"An error occurred while retrieving director agent for module {module_id}: {e}")
+    return None
+      

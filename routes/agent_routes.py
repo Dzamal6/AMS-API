@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
 from config import OPENAI_CLIENT as client
-from services.sql_service import upload_agent_metadata, retrieve_all_agents, delete_agent, update_agent, upload_files
+from services.sql_service import get_director_agent_info, upload_agent_metadata, retrieve_all_agents, delete_agent, update_agent, upload_files
 from functions import get_module_session
 
 
@@ -186,7 +186,7 @@ def update_agent_route():
   module_session = get_module_session()
 
   if module_session is None or not module_session:
-    return jsonify({'error': 'Invalid assistant session.'}), 400
+    return jsonify({'error': 'Invalid module session.'}), 400
   
   module_id = str(module_session['Id'])
 
@@ -213,3 +213,25 @@ def update_agent_route():
 
   return jsonify({'message': 'Agent updated successfully.', 'agent': update}), 200
 
+
+@agent_bp.route('/director_agent', methods=['GET'])
+def get_director_agent():
+  """
+  Get director agent details.
+  
+  URL:
+  - GET /director_agent
+  
+  Returns:
+    JSON response (dict): The data of the agent along with a status message or an error message if the operation failed.
+  """
+  module_session = get_module_session()
+  if module_session is None or not module_session:
+    return jsonify({'error': 'Invalid module session.'}), 400
+  
+  director_agent = get_director_agent_info(module_id=module_session['Id'])
+  
+  if director_agent is None:
+    return jsonify({'error': 'Something went wrong while retrieving director agent information.'}), 400
+  
+  return jsonify({'message': 'success', 'agent': director_agent}), 200

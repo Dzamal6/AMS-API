@@ -6,7 +6,7 @@ import pytz
 from concurrent.futures import ThreadPoolExecutor
 from flask import Flask, request, jsonify, current_app
 import hashlib
-from config import user_session_serializer, module_session_serializer, chat_session_serializer
+from config import user_session_serializer, module_session_serializer, chat_session_serializer, agent_session_serializer
 from functools import wraps
 import bcrypt
 from sqlalchemy.inspection import inspect
@@ -211,7 +211,19 @@ def get_module_session():
   module_session = request.cookies.get('module_session')
   if module_session:
     return module_session_serializer.loads(module_session)
+  
+def get_agent_session():
+  """
+  Retrieves the module session data from cookies.
 
+  Returns:
+      dict: The deserialized module session data or None if no module session is present in cookies.
+  """
+  agent_session = request.cookies.get('agent_session')
+  if agent_session:
+    return agent_session_serializer.loads(agent_session)
+  
+  
 def check_admin():
   """
   Checks if the current user has an 'admin' role.
