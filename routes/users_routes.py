@@ -2,7 +2,7 @@
 from flask import Blueprint, jsonify, make_response, request
 
 from config import limiter, user_session_serializer
-from functions import (
+from util_functions.functions import (
   check_is_current_user,
   check_password,
   get_user_info,
@@ -234,6 +234,20 @@ def logout_route():
                       httponly=True,
                       samesite='none',
                      )
+  response.set_cookie('chat_session',
+                      '',
+                      max_age=0,
+                      secure=True,
+                      httponly=True,
+                      samesite='none',
+                      )
+  response.set_cookie('agent_session',
+                      '',
+                      max_age=0,
+                      secure=True,
+                      httponly=True,
+                      samesite='none',
+                      )
   response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
   response.headers["Pragma"] = "no-cache"
   response.headers["Expires"] = "0"

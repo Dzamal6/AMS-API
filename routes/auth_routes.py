@@ -4,7 +4,7 @@ from flask.helpers import make_response
 import jwt
 from jwt import PyJWKClient
 from config import GOOGLE_CLIENT_ID, limiter, user_session_serializer
-from functions import login_user
+from util_functions.functions import login_user
 import logging
 from services.sql_service import get_user
 

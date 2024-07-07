@@ -5,7 +5,7 @@ import uuid
 import os
 import fitz  # PyMuPDF
 from docx import Document
-from functions import roles_required, get_module_session
+from util_functions.functions import roles_required, get_module_session
 
 document_bp = Blueprint('documents', __name__)
 

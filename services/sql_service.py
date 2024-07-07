@@ -5,8 +5,8 @@ from sqlalchemy.exc import SQLAlchemyError, NoResultFound
 import uuid
 from flask import jsonify
 from datetime import datetime
-from sql_functions import associate_modules, check_for_duplicate, compute_file_hash, create_director_agent, get_doc_content, get_modules_as_dicts, get_roles_as_dicts
-from functions import hash_password, is_email
+from util_functions.sql_functions import associate_modules, check_for_duplicate, compute_file_hash, create_director_agent, get_doc_content, get_modules_as_dicts, get_roles_as_dicts
+from util_functions.functions import hash_password, is_email
 from werkzeug.utils import secure_filename
 import os
 import hashlib
@@ -323,6 +323,7 @@ def create_new_module(
       agent_details = {
       "name": 'Director',
       "system_prompt": 'You are a helpful AI assistant.',
+      "initial_prompt": 'Tell me something fun.',
       "description": 'Director agent created by default for facilitating the base of conversations. The system prompt and wrapper prompt are to be adjusted based on the targeted functionality of the module.',
       "model": 'gpt-3.5-turbo-1106',
       }
@@ -969,13 +970,20 @@ def get_agent_data(agentId):
         docs.append({'name': file.name, 'bytes': io.BytesIO(content_bytes)})
 
       agent_dict = {
-        "Id": agent.id,
+        "Id": str(agent.id),
         "Name": agent.name,
-        "Instructions": agent.system_prompt,
         "Model": agent.model,
+        "Instructions": agent.system_prompt,
+        "Description": agent.description,
+        "WrapperPrompt": agent.wrapper_prompt,
+        "InitialPrompt": agent.initial_prompt,
+        "AgentPointer": agent.agent_id_pointer,
+        "Director": agent.director,
+        "PromptChaining": agent.prompt_chaining,
+        "Documents": [{"Id": str(doc.id), "Name": doc.name} for doc in agent.documents],
         "Documents_IO": docs,
-        "Created": agent.created,
-        "LastModified": agent.last_modified,
+        "Created": agent.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
+        "LastModified": agent.last_modified.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
       }
 
       return agent_dict
@@ -1003,7 +1011,9 @@ def upload_agent_metadata(agent_details: dict[str, str],
                         name=agent_details['name'],
                         system_prompt=agent_details['system_prompt'],
                         wrapper_prompt=agent_details['wrapper_prompt'],
+                        initial_prompt=agent_details['initial_prompt'],
                         description=agent_details['description'],
+                        agent_id_pointer=None if agent_details['agent_pointer'] == '' else uuid.UUID(agent_details['agent_pointer']),
                         model=agent_details['model'],
                         module_id=uuid.UUID(module_id))
       module = session.query(Module).filter(
@@ -1024,6 +1034,8 @@ def upload_agent_metadata(agent_details: dict[str, str],
           "Model": new_agent.model,
           "Instructions": new_agent.system_prompt,
           "WrapperPrompt": new_agent.wrapper_prompt,
+          "InitialPrompt": new_agent.initial_prompt,
+          "AgentPointer": new_agent.agent_id_pointer,
           "Description": new_agent.description,
           "Documents": [{"Id": str(doc.id), "Name": doc.name} for doc in new_agent.documents],
           "Created": new_agent.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
@@ -1053,17 +1065,19 @@ def retrieve_all_agents(module_id: str):
       agents = session.query(Agent).join(Agent.module).filter(Module.id == module_id).all()
       
       return [{
-        "Id": agent.id,
+        "Id": str(agent.id),
         "Name": agent.name,
         "Model": agent.model,
         "Instructions": agent.system_prompt,
         "Description": agent.description,
         "WrapperPrompt": agent.wrapper_prompt,
+        "InitialPrompt": agent.initial_prompt,
+        "AgentPointer": agent.agent_id_pointer,
         "Director": agent.director,
         "PromptChaining": agent.prompt_chaining,
         "Documents": [{"Id": str(doc.id), "Name": doc.name} for doc in agent.documents],
-        "Created": agent.created,
-        "LastModified": agent.last_modified
+        "Created": agent.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
+        "LastModified": agent.last_modified.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
       } for agent in agents]
 
   except Exception as e:
@@ -1097,7 +1111,7 @@ def delete_agent(agent_id):
     print(f"An error occurred: {e}")
     return None
 
-def update_agent(agent_id, name, description, instructions, wrapper_prompt, model, document_ids):
+def update_agent(agent_id, name, description, instructions, wrapper_prompt, initial_prompt, agent_pointer, model, document_ids):
   """
   Updates an existing agent's details in the database.
 
@@ -1107,6 +1121,8 @@ def update_agent(agent_id, name, description, instructions, wrapper_prompt, mode
       description (str): A new description of the agent.
       instructions (str): Updated system instructions for the agent.
       wrapper_prompt (str): A prompt that is set to be sent to the LLM with each user message. It acts as a 'wrapper' for user messages.
+      initial_prompt (str): A prompt that is set to be sent to the LLM when it is initialized. May act as an 'opening' set of instructions.
+      agent_pointer (str): The ID of the agent that the current agent will switch to when it completes its task.
       model (str): The model identifier for the agent.
       document_ids (list of str): A list of new document IDs to associate with the agent.
 
@@ -1123,11 +1139,13 @@ def update_agent(agent_id, name, description, instructions, wrapper_prompt, mode
         documents = session.query(Document).filter(
             Document.id.in_(document_ids)).all()
         result.documents = documents
-
+        
       result.name = name
       result.description = description
       result.system_prompt = instructions
       result.wrapper_prompt = wrapper_prompt
+      result.initial_prompt = initial_prompt
+      result.agent_id_pointer = None if agent_pointer == '' else uuid.UUID(agent_pointer)
       result.model = model
       session.commit()
       return {
@@ -1139,6 +1157,8 @@ def update_agent(agent_id, name, description, instructions, wrapper_prompt, mode
         "Documents": [{"Id": str(doc.id), "Name": doc.name} for doc in result.documents],
         "Director": result.director,
         "WrapperPrompt": result.wrapper_prompt,
+        "InitialPrompt": result.initial_prompt,
+        "AgentPointer": result.agent_id_pointer,
         "PromptChaining": result.prompt_chaining,
         "Created": result.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
         "LastModified": result.last_modified.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
@@ -1175,6 +1195,8 @@ def get_director_agent_info(module_id: str):
         "Documents": [{"Id": str(doc.id), "Name": doc.name} for doc in result.documents],
         "Director": result.director,
         "WrapperPrompt": result.wrapper_prompt,
+        "InitialPrompt": result.initial_prompt,
+        "AgentPointer": result.agent_id_pointer,
         "PromptChaining": result.prompt_chaining,
         "Created": result.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
         "LastModified": result.last_modified.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]

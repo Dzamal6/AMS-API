@@ -5,14 +5,14 @@ from sqlalchemy.pool import NullPool
 from config import POSTGRES_CONNECTION_STRING
 from database.base import Base
 from database.models import User, Role, Document
-from functions import hash_password
+from util_functions.functions import hash_password
 import uuid
 from contextlib import contextmanager
 import os
 import hashlib
 from werkzeug.utils import secure_filename
 
-engine = create_engine(POSTGRES_CONNECTION_STRING, echo=True, pool_size=4, max_overflow=0, pool_recycle=60)
+engine = create_engine(POSTGRES_CONNECTION_STRING, pool_size=4, max_overflow=0, pool_recycle=60) # set echp=True for elaborate logging
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base.metadata.bind = engine
 

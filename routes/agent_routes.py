@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify
 from config import OPENAI_CLIENT as client
 from services.sql_service import get_director_agent_info, upload_agent_metadata, retrieve_all_agents, delete_agent, update_agent, upload_files
-from functions import get_module_session
+from util_functions.functions import get_module_session
 
 
 agent_bp = Blueprint('agent', __name__)
@@ -40,6 +40,8 @@ def create_agent():
   description = request.form.get('description')
   instructions = request.form.get('instructions')
   wrapper_prompt = request.form.get('wrapper_prompt')
+  initial_prompt = request.form.get('initial_prompt')
+  agent_pointer = request.form.get('agent_pointer')
   model = request.form.get('model')
   module_session = get_module_session()
 
@@ -69,7 +71,9 @@ def create_agent():
     "name": name,
     "system_prompt": instructions,
     "wrapper_prompt": wrapper_prompt,
+    "initial_prompt": initial_prompt,
     "description": description,
+    "agent_pointer": agent_pointer,
     "model": model
   }
   upload = upload_agent_metadata(agent_details, module_id, file_ids)
@@ -181,6 +185,8 @@ def update_agent_route():
   description = request.form.get('description')
   instructions = request.form.get('instructions')
   wrapper_prompt = request.form.get('wrapper_prompt')
+  initial_prompt = request.form.get('initial_prompt')
+  agent_pointer = request.form.get('agent_pointer')
   model = request.form.get('model')
 
   module_session = get_module_session()
@@ -196,7 +202,7 @@ def update_agent_route():
   if not file_ids:
     file_ids = []
 
-  if files:
+  if files and files is not []:
     module_ids = []
     module_ids.append(module_id)
     uploaded_files = upload_files(files, module_ids=module_ids)
@@ -205,8 +211,9 @@ def update_agent_route():
     for status, response in uploaded_files:
       if status == 'success' and response['Id'] not in file_ids:
         file_ids.append(response['Id'])
-  print(f'Updating agent with files: {[f"{file_id}" for file_id in file_ids]}')
-  update = update_agent(agent_id, name, description, instructions, wrapper_prompt, model, file_ids)
+    print(f'Updating agent with files: {[f"{file_id}" for file_id in file_ids]}')
+    
+  update = update_agent(agent_id, name, description, instructions, wrapper_prompt, initial_prompt, agent_pointer, model, file_ids)
 
   if update is None:
     return jsonify({'error': 'An error occurred while updating the agent.'}), 400

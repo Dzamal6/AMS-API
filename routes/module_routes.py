@@ -1,9 +1,10 @@
 from flask import Blueprint, request, jsonify, make_response, current_app
 import requests
-from functions import check_module_permission, check_user_modules, decrypt_token, encrypt_token, roles_required, get_user_info, check_user_projects, check_admin
+from services.openai_service import safely_end_chat_session
+from util_functions.functions import check_module_permission, check_user_modules, decrypt_token, encrypt_token, get_agent_session, get_chat_session, get_module_session, roles_required, get_user_info, check_user_projects, check_admin
 from services.sql_service import create_new_module, delete_module, get_all_modules, get_module_by_id, upload_agent_metadata
 from config import FERNET_KEY, module_session_serializer
-from sql_functions import create_director_agent
+from util_functions.sql_functions import create_director_agent
 
 module_bp = Blueprint('module', __name__)
 
@@ -191,3 +192,58 @@ def delete_module_route():
     return jsonify({'message': 'Module deleted from the database.'}), 200
   else:
     return jsonify({'message': 'Could not delete module.'}), 400
+
+@module_bp.route('/modules/session', methods=['DELETE'])
+def reset_module_session():
+    """
+    Resets the module session cookie along with the chat and agent session cookies. If those are active, deletes the agents and files stored in
+    in the session from OpenAI servers.
+    
+    URL:
+    - DELETE /modules/session
+    
+    Returns:
+        JSON response (dict): A message indicating whether the sessions were reset successfully.
+        
+    Status Codes:
+      200 OK: All sessions deleted successfully.
+      400 Bad Request: All or some sessions failed to be reset.
+    """
+    module_session = get_module_session()
+    chat_session = get_chat_session()
+    agent_session = get_agent_session()
+    if not module_session and not chat_session and not agent_session:
+        return jsonify({'message': 'No sessions are active.'}), 200
+    
+    if chat_session:
+        chat_response_data, chat_status_code = safely_end_chat_session()
+        response = make_response(jsonify({'chat_session': chat_response_data}), chat_status_code)
+    else:
+        response = make_response(jsonify('Successfully reset agent, module and agent session cookies.'), 200)
+    
+    response.set_cookie('module_session',
+                        '',
+                        max_age=0,
+                        secure=True,
+                        httponly=True,
+                        samesite='none',
+                        )
+    response.set_cookie('chat_session',
+                        '',
+                        max_age=0,
+                        secure=True,
+                        httponly=True,
+                        samesite='none',
+                        )
+    response.set_cookie('agent_session',
+                        '',
+                        max_age=0,
+                        secure=True,
+                        httponly=True,
+                        samesite='none',
+                        )
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    
+    return response

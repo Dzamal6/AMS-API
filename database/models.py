@@ -7,6 +7,7 @@ from sqlalchemy.dialects.postgresql import UUID
 # MIGRATING CMDS: alembic revision --autogenerate -m "desc"
 # MIGRATING CMDS: alembic upgrade head
 # MIGRATE TO SPECIFIC VERSION: alembic upgrade <target-version>
+# MANUALLY SET HEAD TO LAST VERSION: alembic stamp head
 
 
 class User(Base):
@@ -95,10 +96,11 @@ class ChatSession(Base):
   moduleID = Column(UUID(as_uuid=True),
                     ForeignKey('modules.id', ondelete='SET NULL'),
                     nullable=True)
-  transcripts = relationship('Transcript',
-                             backref='chat_session',
-                             lazy='dynamic',
-                             cascade='all, delete-orphan')
+  threadID = Column(String(150), nullable=False, index=True)
+  agents = relationship("Agent",
+                        secondary='agent_chat',
+                        back_populates='chat_sessions')
+  last_agent = Column(UUID(as_uuid=True), ForeignKey('agents.id', ondelete='SET NULL'), nullable=True)
   created = Column(DateTime, default=datetime.utcnow)
   last_modified = Column(DateTime,
                          default=datetime.utcnow,
@@ -120,15 +122,18 @@ class Document(Base):
                          default=datetime.utcnow,
                          onupdate=datetime.utcnow)
 
-
+# INITIAL PROMPT --> works only if flow control is set to AI 
+# POINTS TO (next agent) --> works only if flow control is AI
 class Agent(Base):
   __tablename__ = 'agents'
   id = Column(UUID(as_uuid=True), primary_key=True, index=True)
   name = Column(String, index=True, nullable=False)
   system_prompt = Column(String, nullable=False)
   wrapper_prompt = Column(String, nullable=True)
+  initial_prompt = Column(String, nullable=True)
   description = Column(String)
   model = Column(String(24), nullable=False)
+  agent_id_pointer = Column(UUID(as_uuid=True), nullable=True)
   documents = relationship("Document",
                            secondary='agent_file',
                            back_populates="agents")
@@ -136,6 +141,9 @@ class Agent(Base):
   module = relationship("Module", back_populates='agents')
   director = Column(Boolean, default=False)
   prompt_chaining = Column(Boolean, default=False)
+  chat_sessions = relationship('ChatSession',
+                               secondary='agent_chat',
+                               back_populates='agents')
   created = Column(DateTime, default=datetime.utcnow)
   last_modified = Column(DateTime,
                          default=datetime.utcnow,
@@ -152,6 +160,17 @@ agent_file_table = Table(
            UUID(as_uuid=True),
            ForeignKey('documents.id'),
            primary_key=True))
+
+agent_chat_table = Table(
+       'agent_chat', Base.metadata,
+       Column('agent_id', 
+              UUID(as_uuid=True), 
+              ForeignKey('agents.id'), 
+              primary_key=True),
+       Column('chat_session_id', 
+              UUID(as_uuid=True), 
+              ForeignKey('chat_sessions.id'), 
+              primary_key=True))
 
 # can be changed to agent
 # assistant_usage = Table(

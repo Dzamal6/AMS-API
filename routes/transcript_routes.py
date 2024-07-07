@@ -3,7 +3,7 @@ import requests
 from services.session_service import check_assistant_session
 from services.sql_service import get_user_chat_sessions, remove_chat_session 
 from config import VOICEFLOW_TRANSCRIPTS
-from functions import roles_required, get_user_info, get_module_session
+from util_functions.functions import roles_required, get_user_info, get_module_session
 
 transcript_bp = Blueprint('blueprints', __name__)
 

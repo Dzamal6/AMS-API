@@ -21,7 +21,7 @@ app.config['LOGIN_KEY'] = config.LOGIN_KEY
 
 config.limiter.init_app(app)
 
-# logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
+logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO, handlers=[logging.StreamHandler()])
 # logging.getLogger('sqlalchemy.engine').setLevel(logging.DEBUG)
 
 # Base.metadata.create_all(engine)

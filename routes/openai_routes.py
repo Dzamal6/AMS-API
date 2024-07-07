@@ -2,7 +2,11 @@ import logging
 from flask import Blueprint, jsonify, request
 from flask.helpers import make_response
 from config import OPENAI_CLIENT as client, chat_session_serializer, agent_session_serializer
-from services.openai_service import chat_ta, create_agent, delete_agent
+from util_functions.functions import get_agent_session, get_chat_session
+from services.openai_service import batch_delete_agents, batch_delete_files, chat_ta, create_agent, delete_agent, initialize_agent_chat, safely_end_chat_session
+from openai import NotFoundError
+
+from util_functions.oai_functions import check_switch_agent, convert_attachments, convert_content, get_switch_agent
 
 openai_bp = Blueprint("openai", __name__)
 
@@ -16,7 +20,7 @@ def initialize():
   - POST /openai/initialize
 
   Parameters:
-      agent_id (str): The ID of the agent to be initialized.
+      agent_id (str): The ID of the agent to be initialized. This is the ID of the database-stored metadata of the agent, not the OpenAI ID.
 
   Returns:
       JSON response (dict): A message indicating successful initialization with a new thread ID and agent ID,
@@ -56,14 +60,17 @@ def initialize():
 @openai_bp.route('/openai/init_chat', methods=['POST'])
 def initialize_chat():
   """
-  Initializes an OpenAI assistant (agent) using the provided ID and immediately sends a message to the agent. This reduces request overhead as agents can be initialized by sending a message to them directly.
+  Initializes an OpenAI assistant (agent) using the provided ID, creates a new thread and immediately sends a message to the agent using the new thread. 
+  This reduces request overhead as agents can be initialized by sending a message to them directly - useful for multi-agent conversations.
+  The thread ID is saved to the database and can later be retrieved for reviewing or resuming the conversation.
   
   URL:
   - POST /openai/init_chat
   
   Parameters:
-    agent_id (str): The ID of the agent to be initialized.
+    agent_id (str): The ID of the agent to be initialized. This is the ID of the database-stored metadata of the agent, not the OpenAI ID.
     message (str): The user message to be sent to the initialized agent.
+    thread_id (str): The thread the conversation is being held on. If no thread_id is provided, a new thread will be initialized. 
     
   Returns
       JSON response (dict): A message indicating successful initialization with a new thread ID and agent ID including the response from the agent,
@@ -73,41 +80,24 @@ def initialize_chat():
       404 Not Found: Agent with the specified ID not found.
       400 Bad Request: Failed to initialize agent or there was an error fetching its response.
   """
+  # TODO: Client (calls init_chat(agent1_id, thread:none)) --> Conduct conversation on thread --> "END OF SIMULATION" (or other indicator) --> Client (calls init_chat(agent_pointer, thread:existing thread))
   agent_id = request.json.get('agent_id')
-  thread = client.beta.threads.create()
-  logging.info(f'Created a new thread: {thread.id}')
+  thread_id = request.json.get('thread_id') # If a thread id is provided, don't creat a new one, use the provided one.
   user_input = request.json.get('message')
   
   if not agent_id or not user_input:
     logging.error(f"Missing required parameters: agent_id={agent_id}, user_input={user_input}")
     return jsonify({'error': 'Missing required fields.'}), 400
-    
-  new_oai_agent_id, file_ids = create_agent(agent_id)
-
-  if not new_oai_agent_id or new_oai_agent_id is None:
-    return jsonify({'error': 'Agent not found'}), 404
   
-  chat = chat_ta(new_oai_agent_id, thread.id, user_input)
-
-  if 'error' in chat:
-    print(f"Error: {chat['error']}")
-    return jsonify({'error': chat['error']}), 400
+  print(f'THREAD: {thread_id}')
   
-  chat_serializer = chat_session_serializer
-  agent_serializer = agent_session_serializer
-  session_data = chat_serializer.dumps({'agent_id': new_oai_agent_id, 'thread_id': thread.id, 'file_ids': file_ids})
-  if isinstance(session_data, bytes):
-    session_data = session_data.decode('utf-8')
+  if not thread_id: 
+    thread_id = client.beta.threads.create().id
+    logging.info(f'Created a new thread: {thread_id}')
+  else:
+    logging.info(f'Using existing thread: {thread_id}')
     
-  response = make_response(jsonify({'message': 'Created new agent and set its cookie.', 'thread_id': thread.id, 'agent_id': new_oai_agent_id, 'response': chat['success']}), 200)
-  response.set_cookie('chat_session',
-                      session_data,
-                      httponly=True,
-                      secure=True,
-                      samesite='none',
-                      max_age=604800)
-
-  return response
+  return initialize_agent_chat(agent_id=agent_id, thread_id=thread_id, user_input=user_input)
 
 
 @openai_bp.route('/openai/delete_agent', methods=['POST'])
@@ -130,11 +120,18 @@ def delete_agent_route():
   """
   agent_id = request.json.get('agent_id')
   print(f"Deleting agent with ID: {agent_id}")
-  delete = delete_agent(agent_id)
+  try:
+    delete = delete_agent(agent_id)
+  except NotFoundError as e:
+    logging.error(f'NOT FOUND: Failed delete agent. {e}')
+    return jsonify({'error': 'Could not delete agent.'}), 404
+  except Exception as e:
+    logging.error(f'ERROR: Failed delete agent. {e}')
+    return jsonify({'error': 'Could not delete agent.'}), 409
 
   if delete is None:
     print(f"(OpenAI) Agent with ID {agent_id} could not be deleted.")
-    return jsonify({'error': 'Could not delete agent.'}), 409
+    return jsonify({'error': 'Could not delete agent.'}), 400
 
   print(f'Agent {agent_id} deleted successfully.')
   return jsonify({'message': 'Agent deleted successfully.'}), 200
@@ -154,7 +151,9 @@ def openai_chat():
       thread_id (str): The ID of the thread to use for the conversation, maintaining context across messages.
 
   Returns:
-      JSON response (dict): The chat response from the OpenAI assistant or an error message.
+      JSON response (dict): The chat response from the OpenAI assistant or an error message. The response may include a `switch_agent` field which if populated,
+      the current agent will switch to the one sent back. In the case of the director being set to 'AI' the next agent will be the one 
+      to which the current one points to.
 
   Status Codes:
       200 OK: Chat response received successfully.
@@ -174,8 +173,22 @@ def openai_chat():
   if 'error' in chat:
     print(f"Error: {chat['error']}")
     return jsonify({'error': chat['error']}), 400
-
-  return jsonify({'message': 'Retrieved response', 'response': chat['success']}), 200
+  
+  agent_session = get_agent_session()
+  # TODO: UTILIZE AGENT_SESSION COOKIE TO RETRIEVE THE CURRENT AGENT ID AND RETURN AGENT POINTER (FULL OBJECT).
+  switch_agent, response = check_switch_agent(chat['success'], 'switch agent') # ADD switch_agent flag to either agent table or module table so admin can change it
+  if switch_agent:
+    logging.info('Switch detected! Agent should swap to its pointer agent.')
+    switch_agent = get_switch_agent(agent_session=agent_session)
+    if switch_agent is None:
+      return jsonify({'error': 'Failed to obtain switch agent'})
+    else:
+      serializer = agent_session_serializer
+      agent_session_data = serializer.dumps(switch_agent)
+      res = make_response(jsonify({'message': 'Retrieved response', 'response': response, 'switch_agent': switch_agent}), 200)
+      res.set_cookie('agent_session', agent_session_data, httponly=True, secure=True, samesite='none', max_age=604800)
+    
+  return jsonify({'message': 'Retrieved response', 'response': response, 'switch_agent': switch_agent}), 200
 
 
 @openai_bp.route('/openai/get_models', methods=['GET'])
@@ -201,4 +214,110 @@ def get_models():
 
   return jsonify({'models': [model.id for model in models.data]}), 200
 
+@openai_bp.route('/openai/check_session', methods=['GET'])
+def check_thread_session():
+  """
+  Obtains and deserializes the `chat_session` cookie to validate its existence. If it exists, returns its thread_id and current agent_id.
+  If the cookie exists and contains partial data, the method 'cleans it up'.
+  The method also checks for existing messages on that thread and returns them if present to restore the conversation in the session.
   
+  URL:
+  - GET /openai/check_session
+  
+  Returns:
+    JSON response (dict): A response with the `chat_session` information, including previous thread messages or an error message indicating failure.
+    
+  Status Codes:
+    200 OK: Chat session information retrieved or there is no session present but connection established.
+    400 Bad Request: Either failed to establish a connection, there was an error fetching session information, or failed to fetch thread messages from OpenAI.
+  """
+  chat_session = get_chat_session()
+  if chat_session is None:
+    return jsonify({'success': 'Established connection but no chat session is present'}), 200
+  
+  if chat_session and 'agent_ids' in chat_session and 'thread_id' in chat_session:
+    agent_id = chat_session['agent_ids'][len(chat_session['agent_ids']) - 1]
+    thread_id = chat_session['thread_id']
+    thread_messages = client.beta.threads.messages.list(thread_id)
+
+    if thread_messages:
+        messages_list = []
+        for msg in thread_messages:
+            message_dict = {
+                'Id': msg.id,
+                'Created': msg.created_at,
+                'Role': msg.role,
+                'Content': convert_content(msg.content),
+                'Attachments': convert_attachments(msg.attachments)
+            }
+            messages_list.append(message_dict)
+          
+        messages_list.reverse()
+
+        return jsonify({
+            'message': "Established connection and found an existing chat_session and retrieved its data.",
+            'agent_id': agent_id,
+            'thread_id': thread_id,
+            'messages': messages_list
+        }), 200
+    else:
+      return jsonify({'message': "Established connection and found an existing chat_session but failed to retrieve thread messages", 'agent_id': agent_id, 'thread_id': thread_id}), 200
+  elif chat_session and 'agent_ids' in chat_session:
+    for agent in chat_session['agent_ids']:
+      delete_agent(agent_id=agent)
+    response = make_response(jsonify({'error': 'Chat session is present but missing required data. Cleaning up...'}), 400)
+    response.set_cookie('chat_session',
+                        '',
+                        max_age=0,
+                        secure=True,
+                        httponly=True,
+                        samesite='none',)
+    return response
+  elif chat_session:
+    response = make_response(jsonify({'error': 'Chat_session is present but missing required data. Cleaning up...'}), 400)
+    response.set_cookie('chat_session',
+                        '',
+                        max_age=0,
+                        secure=True,
+                        httponly=True,
+                        samesite='none',)
+    return response
+  else:
+    return jsonify({'error': 'Failed to establish connection.'}), 400
+  
+@openai_bp.route('/openai/end_chat', methods=['DELETE'])
+def end_session_chat():
+  """
+  Ends the chat session and deletes the chat session cookie. Also deletes all agents and files from OpenAI servers present in the cookie.
+  
+  URL:
+  - DELETE /openai/end_chat
+  
+  Returns:
+    JSON response (str | [str, list]): Json response with a status message or a list of undeleted agents or files.
+  """
+  response_data, status_code = safely_end_chat_session()
+  
+  response = make_response(jsonify(response_data), status_code)
+  if status_code != 200:
+    return response
+  
+  response.set_cookie('chat_session',
+                    '',
+                    max_age=0,
+                    secure=True,
+                    httponly=True,
+                    samesite='none',
+                    )
+  response.set_cookie('agent_session',
+                  '',
+                  max_age=0,
+                  secure=True,
+                  httponly=True,
+                  samesite='none',
+                  )
+  response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+  response.headers["Pragma"] = "no-cache"
+  response.headers["Expires"] = "0"
+
+  return response
