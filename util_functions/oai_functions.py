@@ -73,16 +73,16 @@ def get_switch_agent(agent_session):
     return None
 
  # TODO: Add config option to webapp so admin can change it.
-def wrap_message(message: str, agent_id: str, config: str='start'):
+def wrap_message(message: str, agent_data, config: str='start'):
     """
     Wraps the user message with the agent's set wrapper prompt.
-    Expects a `message` from the user, `agent_id` the user is currently conversing with and `config`, which can either be 'end' or 'start'.
+    Expects a `message` from the user, `agent_data` the user is currently conversing with and `config`, which can either be 'end' or 'start'.
     The config parameter determines whether the user message will be appended at the beginning or end of the wrapper prompt.
     """
     if config != 'start' and config != 'end':
         logging.error(f'`config` parameter must be either "start" or "end"')
         return message
-    agent_data = get_agent_data(agentId=agent_id)
+    
     if 'WrapperPrompt' not in agent_data:
         logging.error(f'Could not find `WrapperPrompt` field in {agent_data}')
         return message
@@ -91,18 +91,34 @@ def wrap_message(message: str, agent_id: str, config: str='start'):
         logging.info(f'`WrapperPrompt` field is empty in {agent_data}')
         return message
     if config == 'start':
-        return f"""
-    user_message: 
-    {message}
-    -----
-    instructions:
-    {wrapper}
-    """
+        return f"""\nuser_message:\n{message}\n-----\ninstructions:\n{wrapper}\n"""
     if config == 'end':
-        return f"""
-    instructions:
-    {wrapper}
-    -----
-    user_message:
-    {message}
+        return f"""\ninstructions:\n{wrapper}\n-----\nuser_message:\n{message}"""
+    
+ # TODO: Add config option to webapp so admin can change it.
+def include_init_message(message: str, agent_data, config: str='concat'):
     """
+    Includes the init message in the user message if present. Intended to be used on every initialization of an agent inside `AI` driven conversations.
+    
+    Parameters:
+        message (str): The user message being sent to the agent.
+        agent_data (dict): The data of the agent currently conversing with the user.
+        config (str): The config parameter determines whether the user message will be ignored or concatenated to the initial prompt. It may be beneficial to ingore it so the user cannot alter the course of the conversation.
+        
+    Returns:
+        tuple[bool, str]: A bool indicating whether the initial prompt was used to alter the message or not along with a string containing the either altered or original user message.
+    """
+    if config != 'concat' and config != 'ignore':
+        logging.error(f'`config` parameter must be either "concat" or "ignore"')
+        return False, message
+    if 'InitialPrompt' not in agent_data:
+        logging.error(f'Could not find `InitialPrompt` in {agent_data}')
+        return False, message
+    init = agent_data['InitialPrompt']
+    if init is None or init == '' or not init:
+        logging.info(f'`InitialPrompt` field is empty in {agent_data}')
+        return False, message
+    if config == 'concat':
+        return True, f"instructions:\n{init}\n---\nuser_message:\n'{message}'"
+    if config == 'ignore':
+        return True, f"instructions:\n'{init}'"

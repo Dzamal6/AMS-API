@@ -217,7 +217,7 @@ def get_agent_session():
   Retrieves the agent session data from cookies.
 
   Returns:
-      dict: The deserialized module session data or None if no module session is present in cookies.
+      dict: The deserialized agent session data or None if no module session is present in cookies.
   """
   agent_session = request.cookies.get('agent_session')
   if agent_session:

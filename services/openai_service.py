@@ -11,7 +11,7 @@ from config import OPENAI_CLIENT as client, chat_session_serializer, agent_sessi
 import time
 from util_functions.functions import get_agent_session, get_chat_session
 from services.sql_service import get_agent_data
-from util_functions.oai_functions import wrap_message
+from util_functions.oai_functions import include_init_message, wrap_message
 
 required_version = version.parse("1.1.1")
 current_version = version.parse(openai.__version__)
@@ -65,9 +65,17 @@ def chat_ta(assistant_id:str, thread_id:str, user_input:str):
   
   print(f"Received message: '{user_input}' for thread ID: {thread_id}")
   
+  wrapper = user_input
+  agent_session = get_agent_session()
+  if not agent_session or 'agent_id' not in agent_session:
+    logging.warning(f'Could not resolve agent_session cookie. Failed to alter message...')
+  else:
+    agent_data = get_agent_data(agentId=agent_session['agent_id'])
+    wrapper = wrap_message(wrapper, agent_data=agent_data, config='start')
+  
   client.beta.threads.messages.create(thread_id=thread_id,
                                       role="user",
-                                      content=user_input)
+                                      content=wrapper)
   run = client.beta.threads.runs.create(thread_id=thread_id,
                                         assistant_id=assistant_id)
   start_time = time.time()
@@ -237,15 +245,22 @@ def initialize_agent_chat(agent_id: str, thread_id: str, user_input: str):
   if not new_oai_agent_id or new_oai_agent_id is None:
     return jsonify({'error': 'Agent not found'}), 404
   
-  wrapped_message = wrap_message(user_input, agent_id=agent_id, config='start')
+  agent_data = get_agent_data(agentId=agent_id)
   
-  chat = chat_ta(new_oai_agent_id, thread_id, wrapped_message)
+  include_initial, initial_input = include_init_message(user_input, agent_data=agent_data, config='concat')
+  if not include_initial:
+    initial_input = wrap_message(user_input, agent_data=agent_data, config='start')
+  
+  chat = chat_ta(new_oai_agent_id, thread_id, initial_input)
 
   if 'error' in chat:
     print(f"Error: {chat['error']}")
     return jsonify({'error': chat['error']}), 400
   
+  # TODO: Add chatsession to db (thread, module, agents). This is the initial adding to database (only thread and module_id is needed). On every message sent to the thread, add metadata such as agents, files
+  
   agent_serializer = agent_session_serializer
+  # IMPORTANT: agent_id: Database-stored agent, oai_agent_id: OpenAI ID of the temp agent, file_ids: OpenAI IDs of temporarily stored files on OpenAI.
   agent_data = agent_serializer.dumps({'agent_id': agent_id, 'oai_agent_id': new_oai_agent_id, 'file_ids': file_ids})
   if isinstance(agent_data, bytes):
     agent_data = agent_data.decode('utf-8')
