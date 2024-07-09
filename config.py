@@ -3,6 +3,9 @@ from itsdangerous import URLSafeSerializer
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from openai import OpenAI
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Database connection string
 POSTGRES_CONNECTION_STRING = os.environ['POSTGRES_CONNECTION_STRING']
