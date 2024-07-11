@@ -12,6 +12,7 @@ import os
 import hashlib
 import io
 from typing import cast
+from psycopg2.errors import InvalidTextRepresentation
 
 
 def get_all_transcripts():
@@ -985,8 +986,10 @@ def get_agent_data(agentId):
         "Created": agent.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
         "LastModified": agent.last_modified.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
       }
-
       return agent_dict
+  except InvalidTextRepresentation as e:
+    print(f'Invalid input! {e}')
+    return None
   except Exception as e:
     print(f"An error occurred: {e}")
     return None
@@ -1131,7 +1134,7 @@ def update_agent(agent_id, name, description, instructions, wrapper_prompt, init
   """
   try:
     with session_scope() as session:
-      result = session.query(Agent).filter_by(id=agent_id).first()
+      result = session.query(Agent).filter_by(id=uuid.UUID(agent_id)).first()
       if not result:
         return None
 
@@ -1145,8 +1148,9 @@ def update_agent(agent_id, name, description, instructions, wrapper_prompt, init
       result.system_prompt = instructions
       result.wrapper_prompt = wrapper_prompt
       result.initial_prompt = initial_prompt
-      result.agent_id_pointer = None if agent_pointer == '' else uuid.UUID(agent_pointer)
       result.model = model
+      if agent_pointer is not None and agent_pointer != '' and agent_pointer != 'None':
+        result.agent_id_pointer = uuid.UUID(agent_pointer)
       session.commit()
       return {
         "Id": str(result.id),
@@ -1209,3 +1213,32 @@ def get_director_agent_info(module_id: str):
     logging.error(f"An error occurred while retrieving director agent for module {module_id}: {e}")
     return None
       
+def db_create_chat_session(thread_id: str, module_id: str):
+  """
+  Creates a new ChatSession in the database.
+  
+  Parameters:
+    thread_id (str): The ID of the thread the conversation is held on.
+    module_id (str): The ID of the module the conversation belongs to.
+    
+  Returns:
+    dict or None: The chat_session object or None if the operation fails.
+  """
+  try:
+    with session_scope() as session:
+      chat_session = ChatSession(id=uuid.uuid4(), threadID=thread_id, moduleID=uuid.UUID(module_id))
+      session.add(chat_session)
+      session.commit()
+      return {
+        'Id': str(chat_session.id),
+        'ModuleID': str(chat_session.moduleID),
+        'LastAgent': str(chat_session.last_agent),
+        'Created': chat_session.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
+        'LastModified': chat_session.last_modified.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
+      }
+  except SQLAlchemyError as e:
+    logging.error(f"An error occurred while creating chat session for thread {thread_id}. {e}")
+    return None
+  except Exception as e:
+    logging.error(f"An error occurred while creating chat session for thread {thread_id}. {e}")
+    return None

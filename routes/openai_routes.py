@@ -92,8 +92,12 @@ def initialize_chat():
   print(f'THREAD: {thread_id}')
   
   if not thread_id: 
-    thread_id = client.beta.threads.create().id
-    logging.info(f'Created a new thread: {thread_id}')
+    chat_session = get_chat_session()
+    if chat_session and 'thread_id' in chat_session:
+      thread_id = chat_session['thread_id']
+    else:
+      thread_id = client.beta.threads.create().id
+      logging.info(f'Created a new thread: {thread_id}')
   else:
     logging.info(f'Using existing thread: {thread_id}')
     
@@ -175,18 +179,19 @@ def openai_chat():
     return jsonify({'error': chat['error']}), 400
   
   agent_session = get_agent_session()
-  # TODO: UTILIZE AGENT_SESSION COOKIE TO RETRIEVE THE CURRENT AGENT ID AND RETURN AGENT POINTER (FULL OBJECT).
-  switch_agent, response = check_switch_agent(chat['success'], 'switch agent') # ADD switch_agent flag to either agent table or module table so admin can change it
+  switch_agent, response = check_switch_agent(chat['success'], 'SWITCH AGENT') # ADD switch_agent_flag to either agent table or module table so admin can change it
   if switch_agent:
     logging.info('Switch detected! Agent should swap to its pointer agent.')
     switch_agent = get_switch_agent(agent_session=agent_session)
     if switch_agent is None:
       return jsonify({'error': 'Failed to obtain switch agent'})
     else:
-      serializer = agent_session_serializer
-      agent_session_data = serializer.dumps(switch_agent)
-      res = make_response(jsonify({'message': 'Retrieved response', 'response': response, 'switch_agent': switch_agent}), 200)
-      res.set_cookie('agent_session', agent_session_data, httponly=True, secure=True, samesite='none', max_age=604800)
+      # serializer = agent_session_serializer
+      # agent_session_data = serializer.dumps(switch_agent)
+      # res = make_response(jsonify({'message': 'Retrieved response', 'response': response, 'switch_agent': switch_agent}), 200)
+      # res.set_cookie('agent_session', agent_session_data, httponly=True, secure=True, samesite='none', max_age=604800)
+      logging.info(f'Switching to agent {switch_agent['Id']}')
+      return initialize_agent_chat(agent_id=switch_agent['Id'], thread_id=thread_id, user_input=user_input)
     
   return jsonify({'message': 'Retrieved response', 'response': response, 'switch_agent': switch_agent}), 200
 

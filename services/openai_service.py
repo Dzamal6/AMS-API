@@ -9,9 +9,9 @@ import json
 from packaging import version
 from config import OPENAI_CLIENT as client, chat_session_serializer, agent_session_serializer
 import time
-from util_functions.functions import get_agent_session, get_chat_session
-from services.sql_service import get_agent_data
-from util_functions.oai_functions import include_init_message, wrap_message
+from util_functions.functions import get_agent_session, get_chat_session, get_module_session
+from services.sql_service import db_create_chat_session, get_agent_data
+from util_functions.oai_functions import include_init_message, safely_delete_last_messages, wrap_message
 
 required_version = version.parse("1.1.1")
 current_version = version.parse(openai.__version__)
@@ -24,14 +24,17 @@ else:
   print("OpenAI version is compatible")
 
 
-def chat_ta(assistant_id:str, thread_id:str, user_input:str):
+def chat_ta(assistant_id:str, thread_id:str, user_input:str, initial:bool=False, agent_id:str=None):
   """
   Sends a message to an OpenAI assistant and manages the conversation within a specific thread, counting the tokens used.
+  This method also wraps the user message with wrapper prompts according to its parameters and the agent's data.
 
   Parameters:
       assistant_id (str): The unique identifier for the OpenAI assistant.
       thread_id (str): The identifier for the conversation thread.
       user_input (str): The user's message to the AI assistant.
+      initial (bool): If the user_input comes from an initial interaction. Defaults to False.
+      agent_id (str): If `initial` is set to True, an `agent_id` is required to find the initial wrapper prompt.
 
   Returns:
       dict: A dictionary with either a 'success' key containing the assistant's response or an 'error' key with an error message.
@@ -51,13 +54,13 @@ def chat_ta(assistant_id:str, thread_id:str, user_input:str):
       {'error': 'missing thread_id'}
   """
   # Token Counting Input
-  encoding = tiktoken.get_encoding("cl100k_base")
-  encoding = tiktoken.encoding_for_model("gpt-4")
+  # encoding = tiktoken.get_encoding("cl100k_base")
+  # encoding = tiktoken.encoding_for_model("gpt-4")
   
-  inp_tokens = len(encoding.encode(user_input))
-  inp_cost_tok = (0.01 / 1000) * inp_tokens
-  print(
-      f"Number of tokens input: {inp_tokens}\nCost of tokens: {inp_cost_tok}")
+  # inp_tokens = len(encoding.encode(user_input))
+  # inp_cost_tok = (0.01 / 1000) * inp_tokens
+  # print(
+  #     f"Number of tokens input: {inp_tokens}\nCost of tokens: {inp_cost_tok}")
   
   if not thread_id:
     print('Error: Missing thread_id')
@@ -66,12 +69,26 @@ def chat_ta(assistant_id:str, thread_id:str, user_input:str):
   print(f"Received message: '{user_input}' for thread ID: {thread_id}")
   
   wrapper = user_input
-  agent_session = get_agent_session()
-  if not agent_session or 'agent_id' not in agent_session:
-    logging.warning(f'Could not resolve agent_session cookie. Failed to alter message...')
+  if initial:
+    if not agent_id:
+      raise NotFoundError(f'Missing agent_id!')
+    else:
+      safely_delete_last_messages(thread_id=thread_id) # This placement removes context of the deleted messages for the upcoming response, but risks deleted messages even if the conversation fails.
+      agent_data = get_agent_data(agentId=agent_id)
+    
+      initial_present, initial_input = include_init_message(user_input, agent_data=agent_data, config='concat')
+      if not initial_present:
+        initial_input = wrap_message(user_input, agent_data=agent_data, config='start')
+      wrapper = initial_input
+      logging.info(f'Wrapping message: {wrapper}')
   else:
-    agent_data = get_agent_data(agentId=agent_session['agent_id'])
-    wrapper = wrap_message(wrapper, agent_data=agent_data, config='start')
+    agent_session = get_agent_session()
+    if not agent_session or 'agent_id' not in agent_session:
+      logging.warning(f'Could not resolve agent_session cookie. Failed to alter message...')
+    else:
+      agent_data = get_agent_data(agentId=agent_session['agent_id'])
+      wrapper = wrap_message(wrapper, agent_data=agent_data, config='start')
+      logging.info(f'Wrapping message: {wrapper}')
   
   client.beta.threads.messages.create(thread_id=thread_id,
                                       role="user",
@@ -80,14 +97,18 @@ def chat_ta(assistant_id:str, thread_id:str, user_input:str):
                                         assistant_id=assistant_id)
   start_time = time.time()
   while True:
-    run_status = client.beta.threads.runs.retrieve(thread_id=thread_id,
+    run = client.beta.threads.runs.retrieve(thread_id=thread_id,
                                                    run_id=run.id)
   
-    if run_status.status == "completed":
+    if run.status == "completed":
+      logging.info(f'Prompt tokens used: {run.usage.prompt_tokens}, Completion tokens used: {run.usage.completion_tokens}')
+      # if initial: --> This placement is better for ensuring the messages are only deleted if the chat is completed, but the response will have context of the deleted messages.
+      #   safely_delete_last_messages(thread_id=thread_id)
       break
-    if run_status.status not in ['completed', 'queued', 'in_progress']:
-      logging.error(f'Run status failed with status: {run_status.status}')
-      return {'error': f'Run failed with status: {run_status.status}'}
+    if run.status not in ['completed', 'queued', 'in_progress']:
+      logging.error(f'Run status failed with status: {run.status}')
+      logging.info(f'Prompt tokens used: {run.usage.prompt_tokens}')
+      return {'error': f'Run failed with status: {run.status}'}
   
     if time.time() - start_time > 55:
       print("Timeout reached")
@@ -99,11 +120,11 @@ def chat_ta(assistant_id:str, thread_id:str, user_input:str):
   print(f"Assistant Response: {response}")
   
   # Token Counting Response
-  out_tokens = len(encoding.encode(response))
-  out_cost_tok = (0.03 / 1000) * out_tokens
-  print(
-      f"Number of tokens response: {out_tokens}\nCost of tokens: {out_cost_tok}"
-  )
+  # out_tokens = len(encoding.encode(response))
+  # out_cost_tok = (0.03 / 1000) * out_tokens
+  # print(
+  #     f"Number of tokens response: {out_tokens}\nCost of tokens: {out_cost_tok}"
+  # )
   
   # Token Updates
   # update_assistant_tokens(assistant_name, inp_tokens, inp_cost_tok, out_tokens,
@@ -230,6 +251,7 @@ def initialize_agent_chat(agent_id: str, thread_id: str, user_input: str):
   The method sets a cookie for the chat session if none exists, and adds agent_ids and file_ids used within the `chat_session` to the cookie if it already exists. 
   This is very useful for later deleting the used files and agents from OpenAI.
   An `agent_session` cookie is also set to track the current agent used and its files.
+  A ChatSession is added to the database with the thread_id if no `chat_session` cookie is present.
   
   Parameters:
     agent_id (str): The ID of the agent to be initialized. This is the ID of the database-stored metadata of the agent, not the OpenAI ID.
@@ -237,7 +259,7 @@ def initialize_agent_chat(agent_id: str, thread_id: str, user_input: str):
     user_input (str): The user message to be sent to the initialized agent.
     
   Returns
-    JSON response (dict): A message indicating successful initialization with a new thread ID and agent ID including the response from the agent,
+    JSON response (dict): A message indicating successful initialization with a new thread ID and OAI agent ID including the response from the agent,
                           or an error message if the agent is not found.
   """
   new_oai_agent_id, file_ids = create_agent(agent_id)
@@ -245,13 +267,7 @@ def initialize_agent_chat(agent_id: str, thread_id: str, user_input: str):
   if not new_oai_agent_id or new_oai_agent_id is None:
     return jsonify({'error': 'Agent not found'}), 404
   
-  agent_data = get_agent_data(agentId=agent_id)
-  
-  include_initial, initial_input = include_init_message(user_input, agent_data=agent_data, config='concat')
-  if not include_initial:
-    initial_input = wrap_message(user_input, agent_data=agent_data, config='start')
-  
-  chat = chat_ta(new_oai_agent_id, thread_id, initial_input)
+  chat = chat_ta(new_oai_agent_id, thread_id, user_input=user_input, initial=True, agent_id=agent_id)
 
   if 'error' in chat:
     print(f"Error: {chat['error']}")
@@ -267,7 +283,16 @@ def initialize_agent_chat(agent_id: str, thread_id: str, user_input: str):
   
   chat_session = get_chat_session()
   
-  print(chat_session)
+  chat_id = None
+  if not chat_session or 'chat_id' not in chat_session:
+    module_session = get_module_session()
+    if not module_session:
+      return jsonify({'error': 'Module session not found'}), 404
+    db_chat = db_create_chat_session(thread_id, module_session['Id'])
+    chat_id = db_chat['Id']
+  else:
+    chat_id = chat_session['chat_id']
+  
   agent_ids = []
   if chat_session and 'agent_ids' in chat_session and 'file_ids' in chat_session:
     agent_ids = chat_session['agent_ids']
@@ -277,7 +302,7 @@ def initialize_agent_chat(agent_id: str, thread_id: str, user_input: str):
   
   chat_serializer = chat_session_serializer
   
-  session_data = chat_serializer.dumps({'agent_ids': agent_ids, 'thread_id': thread_id, 'file_ids': file_ids})
+  session_data = chat_serializer.dumps({'agent_ids': agent_ids, 'thread_id': thread_id, 'file_ids': file_ids, 'chat_id': chat_id})
   logging.info(f"CURRENT CHAT SESSION DATA: 'agent_ids': {agent_ids}, 'thread_id': {thread_id}, 'file_ids': {file_ids}")
   if isinstance(session_data, bytes):
     session_data = session_data.decode('utf-8')
@@ -314,6 +339,8 @@ def batch_delete_agents(agent_ids: list[str]):
   
   valid_agent_ids = [agent_id for agent_id in agent_ids if agent_id]
   
+  print(f'VALID AGENT IDS: {valid_agent_ids}')
+  
   for agent_id in valid_agent_ids:
     try:
       delete = client.beta.assistants.delete(agent_id)
@@ -327,7 +354,7 @@ def batch_delete_agents(agent_ids: list[str]):
       continue
     except ValueError as e:
       logging.error(f'Invalid agent_id {agent_id}. {e}')
-    logging.info(f'Deleted agent {agent_id}')
+      continue
     
   if not failed_agents:
     return True, failed_agents

@@ -2,6 +2,7 @@
 from flask import Blueprint, jsonify, make_response, request
 
 from config import limiter, user_session_serializer
+from services.openai_service import safely_end_chat_session
 from util_functions.functions import (
   check_is_current_user,
   check_password,
@@ -219,7 +220,11 @@ def logout_route():
   Status Codes:
       200 OK: Logout successful.
   """
-  response = make_response(jsonify({'message': 'Logout successful'}), 200)
+  chat_response_data, chat_status_code = safely_end_chat_session()
+  if chat_response_data:
+    response = make_response(jsonify({'message': 'Logout successful', 'chat_session': {'data': chat_response_data, 'status': chat_status_code}}), 200)
+  else:
+    response = make_response(jsonify({'message': 'Logout successful'}), 200)
   response.set_cookie('user_session',
                       '',
                       max_age=0,
