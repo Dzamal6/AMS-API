@@ -5,7 +5,7 @@ from sqlalchemy.exc import SQLAlchemyError, NoResultFound
 import uuid
 from flask import jsonify
 from datetime import datetime
-from util_functions.sql_functions import associate_modules, check_for_duplicate, compute_file_hash, create_director_agent, get_doc_content, get_modules_as_dicts, get_roles_as_dicts
+from util_functions.sql_functions import associate_modules, check_for_duplicate, compute_file_hash, create_default_agents, get_doc_content, get_module, get_modules_as_dicts, get_roles_as_dicts, get_user_name
 from util_functions.functions import hash_password, is_email
 from werkzeug.utils import secure_filename
 import os
@@ -244,8 +244,11 @@ def get_module_by_id(module_id: str):
       module = session.query(Module).filter_by(id=module_id).first()
       if module:
         return {
-            'Id': module.id,
+            'Id': str(module.id),
             'Name': module.name,
+            'Voice': module.voice,
+            'Analytics': module.convo_analytics,
+            'Summaries': module.summaries,
             'Created': module.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
         }
       else:
@@ -321,14 +324,7 @@ def create_new_module(
       session.add(new_module)
       session.commit()
       
-      agent_details = {
-      "name": 'Director',
-      "system_prompt": 'You are a helpful AI assistant.',
-      "initial_prompt": 'Tell me something fun.',
-      "description": 'Director agent created by default for facilitating the base of conversations. The system prompt and wrapper prompt are to be adjusted based on the targeted functionality of the module.',
-      "model": 'gpt-3.5-turbo-1106',
-      }
-      create_director_agent(agent_details=agent_details, module_id=str(new_module.id), session=session)
+      create_default_agents(module_id=str(new_module.id), session=session, flow_control=flow_control, analytics=convo_analytics, summaries=summaries)
       
       module_data = {
         'Id': str(new_module.id),
@@ -1077,6 +1073,8 @@ def retrieve_all_agents(module_id: str):
         "InitialPrompt": agent.initial_prompt,
         "AgentPointer": str(agent.agent_id_pointer),
         "Director": agent.director,
+        "Summarizer": agent.summarizer,
+        "Analytic": agent.analytic,
         "PromptChaining": agent.prompt_chaining,
         "Documents": [{"Id": str(doc.id), "Name": doc.name} for doc in agent.documents],
         "Created": agent.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
@@ -1213,26 +1211,110 @@ def get_director_agent_info(module_id: str):
     logging.error(f"An error occurred while retrieving director agent for module {module_id}: {e}")
     return None
       
-def db_create_chat_session(thread_id: str, module_id: str):
+def get_analytic_agent(module_id):
+  """
+  Retrieves the details of the analytic agent.
+  
+  Parameters:
+    module_id (str): The ID of the module the agent belongs to.
+  
+  Returns:
+    dict or None: Analytic agent info or None if the operation fails.
+  """
+  try:
+    with session_scope() as session:
+      result = session.query(Agent).filter_by(module_id=module_id, analytic=True).first()
+      if not result:
+        logging.error(f"Failed to retrieve analytic agent for module {module_id}")
+        return None
+      
+      return {
+        "Id": str(result.id),
+        "Name": result.name,
+        "Description": result.description,
+        "Instructions": result.system_prompt,
+        "Model": result.model,
+        "Documents": [{"Id": str(doc.id), "Name": doc.name} for doc in result.documents],
+        "Director": result.director,
+        "WrapperPrompt": result.wrapper_prompt,
+        "InitialPrompt": result.initial_prompt,
+        "AgentPointer": str(result.agent_id_pointer),
+        "PromptChaining": result.prompt_chaining,
+        "Created": result.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
+        "LastModified": result.last_modified.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
+      }
+
+  except SQLAlchemyError as e:
+    logging.error(f"An error occurred while retrieving analytic agent for module {module_id}: {e}")
+    return None
+  except Exception as e:
+    logging.error(f"An error occurred while retrieving analytic agent for module {module_id}: {e}")
+    return None
+
+def get_summarizer_agent(module_id):
+  """
+  Retrieves the details of the summarizer agent.
+  
+  Parameters:
+    module_id (str): The ID of the module the agent belongs to.
+  
+  Returns:
+    dict or None: Analytic agent info or None if the operation fails.
+  """
+  try:
+    with session_scope() as session:
+      result = session.query(Agent).filter_by(module_id=module_id, summarizer=True).first()
+      if not result:
+        logging.error(f"Failed to retrieve summarizer agent for module {module_id}")
+        return None
+      
+      return {
+        "Id": str(result.id),
+        "Name": result.name,
+        "Description": result.description,
+        "Instructions": result.system_prompt,
+        "Model": result.model,
+        "Documents": [{"Id": str(doc.id), "Name": doc.name} for doc in result.documents],
+        "Director": result.director,
+        "WrapperPrompt": result.wrapper_prompt,
+        "InitialPrompt": result.initial_prompt,
+        "AgentPointer": str(result.agent_id_pointer),
+        "PromptChaining": result.prompt_chaining,
+        "Created": result.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
+        "LastModified": result.last_modified.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
+      }
+
+  except SQLAlchemyError as e:
+    logging.error(f"An error occurred while retrieving summarizer agent for module {module_id}: {e}")
+    return None
+  except Exception as e:
+    logging.error(f"An error occurred while retrieving summarizer agent for module {module_id}: {e}")
+    return None
+  
+      
+def db_create_chat_session(thread_id: str, module_id: str, user_id: str):
   """
   Creates a new ChatSession in the database.
   
   Parameters:
     thread_id (str): The ID of the thread the conversation is held on.
     module_id (str): The ID of the module the conversation belongs to.
+    user_id (str): The ID of the user that created the ChatSession.
     
   Returns:
     dict or None: The chat_session object or None if the operation fails.
   """
   try:
     with session_scope() as session:
-      chat_session = ChatSession(id=uuid.uuid4(), threadID=thread_id, moduleID=uuid.UUID(module_id))
+      chat_session = ChatSession(id=uuid.uuid4(), threadID=thread_id, moduleID=uuid.UUID(module_id), userID=uuid.UUID(user_id))
       session.add(chat_session)
       session.commit()
       return {
         'Id': str(chat_session.id),
         'ModuleID': str(chat_session.moduleID),
+        'UserID': str(chat_session.userID),
         'LastAgent': str(chat_session.last_agent),
+        'ThreadID': chat_session.threadID,
         'Created': chat_session.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
         'LastModified': chat_session.last_modified.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
       }
@@ -1242,3 +1324,114 @@ def db_create_chat_session(thread_id: str, module_id: str):
   except Exception as e:
     logging.error(f"An error occurred while creating chat session for thread {thread_id}. {e}")
     return None
+  
+def retrieve_chat_sessions(user_id: str):
+  """
+  Retrieves all ChatSession rows tied to the `user_id`.
+  
+  Parameters:
+    user_id (str): The ID of the user to whom the chat sessions belong to.
+    
+  Returns:
+    list[dict] or None: A list with the ChatSession objects or None if the operation fails.
+  """
+  try:
+    with session_scope() as session:
+      chat_sessions = session.query(ChatSession).filter(ChatSession.userID == uuid.UUID(user_id)).all()
+
+      return [{
+        "Id": str(chat_session.id),
+        'UserName': get_user_name(chat_session.userID, session),
+        'LastAgent': str(chat_session.last_agent),
+        'ModuleName': get_module(chat_session.moduleID, session).name,
+        'ModuleID': str(chat_session.moduleID),
+        'Analytics': get_module(chat_session.moduleID, session).convo_analytics,
+        'Summaries': get_module(chat_session.moduleID, session).summaries,
+        'Analysis': chat_session.analysis,
+        'Summary': chat_session.summary,
+        'MessagesLen': chat_session.messages_len,
+        'ThreadID': chat_session.threadID,
+        'Created': chat_session.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
+        'LastModified': chat_session.last_modified.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
+      } for chat_session in chat_sessions]
+  except NoResultFound as e:
+    return []
+  except SQLAlchemyError as e:
+    logging.error(f"An error occurred while retrieving chat sessions for user {user_id}. {e}")
+    return None
+  except Exception as e:
+    logging.error(f"An error occurred while retrieving chat sessions for user {user_id}. {e}")
+    return None
+  
+def delete_chat_session(chat_id: str):
+  """
+  Deletes a ChatSession from the database.
+  
+  Parameters:
+    chat_id (str): The ID of the ChatSession to be removed.
+    
+  Returns:
+    str or None: The ID of the deleted ChatSession or None if the operation fails.
+  """
+  try:
+    with session_scope() as session:
+      chat_session = session.query(ChatSession).filter(ChatSession.id == uuid.UUID(chat_id)).first()
+      
+      session.delete(chat_session)
+      session.commit()
+      return chat_id
+  except SQLAlchemyError as e:
+    logging.error(f"An error occurred while deleting chat session {chat_id}. {e}")
+    return None
+  except Exception as e:
+    logging.error(f"An error occurred while deleting chat session {chat_id}. {e}")
+    return None
+  
+  # def update_chat_session()... also add analysis, summary to chat session -> update on every safely_end_chat_session()
+
+def update_chat_session(chat_session_id: str,
+                        summary: str=None,
+                        analysis: str=None,
+                        last_agent: str=None,
+                        messages_len: int=None):
+  """
+  Updates the `ChatSession` table with provided data.
+  
+  Parameters:
+    chat_session_id (str): The ID of the ChatSession to be altered.
+    summary (str): The summary of the ChatSession.
+    analysis (str): The analysis of the ChatSession.
+    last_agent (str): The ID of the last agent to interact with the ChatSession.
+    messages_len (int): The current length of the chat session dialog.
+  """
+  try:
+    with session_scope() as session:
+      chat_session = session.query(ChatSession).filter(ChatSession.id == uuid.UUID(chat_session_id)).first()
+      
+      if summary is not None:
+        chat_session.summary = summary
+      if analysis is not None:
+        chat_session.analysis = analysis
+      if last_agent is not None:
+        chat_session.last_agent = last_agent
+      if messages_len is not None:
+        chat_session.messages_len = messages_len
+      session.commit()
+      
+      return {
+        "Id": str(chat_session.id),
+        'UserName': get_user_name(chat_session.userID, session),
+        'LastAgent': str(chat_session.last_agent),
+        'ModuleName': get_module(chat_session.moduleID, session).name,
+        'ModuleID': str(chat_session.moduleID),
+        'Analytics': get_module(chat_session.moduleID, session).convo_analytics,
+        'Summaries': get_module(chat_session.moduleID, session).summaries,
+        'Analysis': chat_session.analysis,
+        'Summary': chat_session.summary,
+        'MessagesLen': chat_session.messages_len,
+        'ThreadID': chat_session.threadID,
+        'Created': chat_session.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
+        'LastModified': chat_session.last_modified.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
+      }
+  except Exception as e:
+    logging.error(f"An error occurred while updating chat session {chat_session_id}. {e}")

@@ -100,7 +100,10 @@ class ChatSession(Base):
   agents = relationship("Agent",
                         secondary='agent_chat',
                         back_populates='chat_sessions')
+  summary = Column(String, nullable=True, index=True)
+  analysis = Column(String, nullable=True, index=True)
   last_agent = Column(UUID(as_uuid=True), ForeignKey('agents.id', ondelete='SET NULL'), nullable=True)
+  messages_len = Column(Integer, nullable=True, default=0)
   created = Column(DateTime, default=datetime.utcnow)
   last_modified = Column(DateTime,
                          default=datetime.utcnow,
@@ -122,7 +125,6 @@ class Document(Base):
                          default=datetime.utcnow,
                          onupdate=datetime.utcnow)
 
-# INITIAL PROMPT --> works only if flow control is set to AI 
 # POINTS TO (next agent) --> works only if flow control is AI
 class Agent(Base):
   __tablename__ = 'agents'
@@ -140,6 +142,8 @@ class Agent(Base):
   module_id = Column(UUID(as_uuid=True), ForeignKey('modules.id', ondelete='CASCADE'))
   module = relationship("Module", back_populates='agents')
   director = Column(Boolean, default=False)
+  summarizer = Column(Boolean, default=False)
+  analytic = Column(Boolean, default=False)
   prompt_chaining = Column(Boolean, default=False)
   chat_sessions = relationship('ChatSession',
                                secondary='agent_chat',

@@ -1,3 +1,4 @@
+import logging
 from database.database import session_scope
 from database.models import Agent, Module, User, Role, Document
 import uuid
@@ -56,32 +57,83 @@ def get_doc_content(doc):
     doc.seek(0)
     return content
 
-def create_director_agent(agent_details: dict[str, str | bool],
-                          module_id: str, session):
+def create_default_agents(module_id: str, session, summaries: bool, analytics: bool, flow_control: str):
     """
-    Create a default director agent for directing conversations within a module.
+    Create a default agent in the database
     
     Parameters:
-        agent_details (dict): A dictionary containing the agent's details. NOTE director param doesn't need to be passed since it is set to True by the method. Only 'name', 'model' and 'system_prompt' are necessary.
         module_id (str): The ID of the module to which the agent belongs.
         session (Session): A database session object.
+        summaries (bool): If a summary agent will be created.
+        analytics (bool): If an analytics agent will be created.
+        flow_control (str): Indicator whether the AI is directing the conversation or the human.
     
-    Returns:
-        UUID: The Id of the created agent in the UUID format.
     """
-    new_agent = Agent(id=uuid.uuid4(),
-                        name=agent_details['name'],
-                        system_prompt=agent_details['system_prompt'],
-                        initial_prompt=agent_details['initial_prompt'],
-                        description=agent_details['description'],
-                        model=agent_details['model'],
-                        director=True,
-                        module_id=uuid.UUID(module_id))
-    module = session.query(Module).filter(
-          Module.id == module_id).first()
-    new_agent.module = module
-
-    session.add(new_agent)
-    session.commit()
-    
-    return new_agent.id
+    try:
+        director_agent_details = {
+        "name": 'Director',
+        "system_prompt": 'You are a helpful AI assistant.',
+        "initial_prompt": 'Tell me something fun.',
+        "description": 'Director agent created by default for facilitating the base of conversations. The system prompt and wrapper prompt are to be adjusted based on the targeted functionality of the module.',
+        "model": 'gpt-3.5-turbo-1106',
+        }
+        director_agent = Agent(id=uuid.uuid4(),
+                            name=director_agent_details['name'],
+                            system_prompt=director_agent_details['system_prompt'],
+                            initial_prompt=director_agent_details['initial_prompt'],
+                            description=director_agent_details['description'],
+                            model=director_agent_details['model'],
+                            director=True,
+                            module_id=uuid.UUID(module_id))
+        
+        module = session.query(Module).filter(
+            Module.id == module_id).first()
+        if summaries:
+            summary_agent_details = {
+                "name": 'Summarizer',
+                "system_prompt": 'You are a helpful AI assistant.',
+                "initial_prompt": 'Tell me something fun.',
+                "description": 'Agent created by default for summarizing conversations automatically when they are ended.',
+                "model": 'gpt-4o',
+                }
+            summary_agent = Agent(id=uuid.uuid4(),
+                                name=summary_agent_details['name'],
+                                system_prompt=summary_agent_details['system_prompt'],
+                                initial_prompt=summary_agent_details['initial_prompt'],
+                                description=summary_agent_details['description'],
+                                model=summary_agent_details['model'],
+                                summarizer=True,
+                                module_id=uuid.UUID(module_id))
+            summary_agent.module = module
+            session.add(summary_agent)
+        if analytics:
+            analytics_agent_details = {
+                "name": 'Analytic',
+                "system_prompt": 'You are an analytics expert. Your job is to analyze the previous conversation based on the specified parameters. Your tone is professional',
+                "initial_prompt": 'Analyze the previous conversation until this point.',
+                "description": 'Agent created by default for summarizing conversations automatically when they are ended.',
+                "model": 'gpt-4o',
+            }
+            analytics_agent = Agent(id=uuid.uuid4(),
+                                name=analytics_agent_details['name'],
+                                system_prompt=analytics_agent_details['system_prompt'],
+                                initial_prompt=analytics_agent_details['initial_prompt'],
+                                description=analytics_agent_details['description'],
+                                model=analytics_agent_details['model'],
+                                analytic=True,
+                                module_id=uuid.UUID(module_id))
+            analytics_agent.module = module
+            session.add(analytics_agent)
+        
+        director_agent.module = module
+        session.add(director_agent)
+        session.commit()
+        
+    except Exception as e:
+        logging.error(f'Failed to process operation while creating default agents. {e}')
+        
+def get_module(module_id: uuid.UUID, session) -> Module:
+    return session.query(Module).filter(Module.id == module_id).first()
+def get_user_name(user_id: uuid.UUID, session) -> str:
+    query = session.query(User).filter(User.id == user_id).first()
+    return query.username if query.username else query.email

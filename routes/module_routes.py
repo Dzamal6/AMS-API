@@ -4,7 +4,6 @@ from services.openai_service import safely_end_chat_session
 from util_functions.functions import check_module_permission, check_user_modules, decrypt_token, encrypt_token, get_agent_session, get_chat_session, get_module_session, roles_required, get_user_info, check_user_projects, check_admin
 from services.sql_service import create_new_module, delete_module, get_all_modules, get_module_by_id, upload_agent_metadata
 from config import FERNET_KEY, module_session_serializer
-from util_functions.sql_functions import create_director_agent
 
 module_bp = Blueprint('module', __name__)
 
@@ -40,6 +39,9 @@ def set_module():
         token = serializer.dumps({
             'Id': str(module['Id']),
             'Name': module['Name'],
+            'Voice': module['Voice'],
+            'Analytics': module['Analytics'],
+            'Summaries': module['Summaries'],
             'Created': module['Created']
         })
         print('Module token set')
@@ -101,7 +103,10 @@ def get_modules_route():
 @roles_required('admin')
 def create_module_route():
   """
-  Creates a new module in the database.
+  Creates a new module in the database. 
+  Also creates a default agent 'Director' which is essential for conducting multi-agent conversations and is used to 
+  direct the interactions. The director agent is meant to be programmed to switch between agents
+  (depending on the flow_control parameter) either semantically or by order.
   
   URL:
   - POST /module
@@ -113,8 +118,8 @@ def create_module_route():
     and 'User' to set the module to be directed by the user. This is used e.g. when the user gives tasks that the module's AIs complete or when the user is not
     supposed to direct the conversation (trainings, interviews where the AI is interviewing the user). If not set, 'User' is assumed by default.
     voice (bool): Whether the module conversations should be conducted via tts and stt or not. False by default.
-    convo_analytics (bool): Whether the module will analyze each saved conversation using AI. False by default.
-    summaries (bool): Whether the module will create a short summary of each saved conversation using AI. False by default.
+    convo_analytics (bool): Whether the module will analyze each saved conversation using AI. False by default. If set to true, creates an agent-analytic.
+    summaries (bool): Whether the module will create a short summary of each saved conversation using AI. False by default. If set to true, creates an agent-summarizer.
 
 Returns: 
     JSON response (dict): A message indicating whether the assistant was added successfully,

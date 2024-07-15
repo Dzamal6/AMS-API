@@ -9,7 +9,7 @@ import json
 from packaging import version
 from config import OPENAI_CLIENT as client, chat_session_serializer, agent_session_serializer
 import time
-from util_functions.functions import get_agent_session, get_chat_session, get_module_session
+from util_functions.functions import get_agent_session, get_chat_session, get_module_session, get_user_info
 from services.sql_service import db_create_chat_session, get_agent_data
 from util_functions.oai_functions import include_init_message, safely_delete_last_messages, wrap_message
 
@@ -43,6 +43,8 @@ def chat_ta(assistant_id:str, thread_id:str, user_input:str, initial:bool=False,
       - Uses `tiktoken` library to count tokens for both the user's input and the assistant's response.
       - Manages messages and interactions via `client.beta.threads.messages.create` and `client.beta.threads.runs.create`.
       - Handles timeouts, returning an error if response time exceeds 55 seconds.
+      - If `initial` is set to True, deletes last two messages (prompt + response). This is a cleanup method, since the response
+      containing the switch flag doesn't need to be displayed.
 
   Examples:
       >>> response = chat_ta('asst_abc123', 'thread_abc123', 'Hello, assistant!')
@@ -272,9 +274,7 @@ def initialize_agent_chat(agent_id: str, thread_id: str, user_input: str):
   if 'error' in chat:
     print(f"Error: {chat['error']}")
     return jsonify({'error': chat['error']}), 400
-  
-  # TODO: Add chatsession to db (thread, module, agents). This is the initial adding to database (only thread and module_id is needed). On every message sent to the thread, add metadata such as agents, files
-  
+    
   agent_serializer = agent_session_serializer
   # IMPORTANT: agent_id: Database-stored agent, oai_agent_id: OpenAI ID of the temp agent, file_ids: OpenAI IDs of temporarily stored files on OpenAI.
   agent_data = agent_serializer.dumps({'agent_id': agent_id, 'oai_agent_id': new_oai_agent_id, 'file_ids': file_ids})
@@ -288,7 +288,10 @@ def initialize_agent_chat(agent_id: str, thread_id: str, user_input: str):
     module_session = get_module_session()
     if not module_session:
       return jsonify({'error': 'Module session not found'}), 404
-    db_chat = db_create_chat_session(thread_id, module_session['Id'])
+    user_session = get_user_info()
+    if not user_session or 'Id' not in user_session:
+      return jsonify({'error': 'Invalid user session or user session could not be resolved'}), 400
+    db_chat = db_create_chat_session(thread_id, module_session['Id'], user_id=user_session['Id'])
     chat_id = db_chat['Id']
   else:
     chat_id = chat_session['chat_id']
@@ -399,6 +402,8 @@ def safely_end_chat_session():
   """
   Attempts to iteratively remove agents and files used during the chat session from OpenAI servers.
   The method retrieves the chat_session cookie and uses the agent_ids and file_ids to identify files for removal.
+  The ChatSession in the database is updated to contain the last agent used by the chat session.
+  A summary and analytics are created if set in the module settings.
   
   Returns:
     dict[str, str | list], literal[200 | 400]: A message along with data and a status code indicating the success or failure of the method.
@@ -406,7 +411,7 @@ def safely_end_chat_session():
   chat_session = get_chat_session()
   
   if not chat_session or chat_session is None or 'agent_ids' not in chat_session:
-      return {'error': 'Could not resolve cookie.'}, 400
+      return {'error': 'Could not resolve chat session cookie.'}, 400
   
   file_ids = []
   agent_ids = chat_session['agent_ids']
@@ -429,3 +434,28 @@ def safely_end_chat_session():
       return {'error': "Failed to delete all or some agents", 'non_deleted_agents': agents_deleted}, 400
   
   return {'message': 'Agents and files removed from OpenAI.'}, 200
+
+def chat_util_agent(agent_id: str, thread_id: str, input: str):
+  """
+  Initializes, messages and then deletes a utility agent. Intended for utility operations like conducting analysis or
+  summaries at the end of a conversation.
+  
+  Parameters:
+    agent_id (str): The ID of the database-stored agent to be used.
+    thread_id (str): The ID of the thread the chat is being held on.
+    input (str): The input to be sent to the agent. This should be a thoroughly curated prompt so that the agent carries the operation out correctly and consistently.
+    
+  Returns:
+    dict: A dictionary with either a 'success' key containing the assistant's response or an 'error' key with an error message.
+  """
+  oai_agent_id, file_ids = create_agent(agent_id=agent_id)
+  chat = chat_ta(assistant_id=oai_agent_id, thread_id=thread_id, user_input=input)
+  
+  if 'error' in chat:
+    print(f"Error: {chat['error']}")
+    safely_delete_last_messages(thread_id=thread_id, config=1)
+    return jsonify({'error': chat['error']}), 400
+  safely_delete_last_messages(thread_id=thread_id)
+  client.beta.assistants.delete(assistant_id=oai_agent_id)
+  
+  return jsonify({'message': 'Generated analysis.', 'response': chat['success']}), 200

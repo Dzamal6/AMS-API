@@ -2,8 +2,9 @@ import logging
 from flask import Blueprint, jsonify, request
 from flask.helpers import make_response
 from config import OPENAI_CLIENT as client, chat_session_serializer, agent_session_serializer
+from services.sql_service import get_analytic_agent, get_module_by_id, get_summarizer_agent, update_chat_session
 from util_functions.functions import get_agent_session, get_chat_session
-from services.openai_service import batch_delete_agents, batch_delete_files, chat_ta, create_agent, delete_agent, initialize_agent_chat, safely_end_chat_session
+from services.openai_service import batch_delete_agents, batch_delete_files, chat_ta, chat_util_agent, create_agent, delete_agent, initialize_agent_chat, safely_end_chat_session
 from openai import NotFoundError
 
 from util_functions.oai_functions import check_switch_agent, convert_attachments, convert_content, get_switch_agent
@@ -326,3 +327,73 @@ def end_session_chat():
   response.headers["Expires"] = "0"
 
   return response
+
+@openai_bp.route('/openai/create_analytics', methods=['GET'])
+def create_analytics_route():
+  """
+  Calls the module's 'Analyic' agent and generates analytics data using its `initial_prompt`.
+  
+  Parameters:
+    module_id (str): The ID of the module the chatsession belongs to.
+    thread_id (str): The ID of the thread the conversation was held on.
+    
+  Returns:
+    JSON response: A Flask response object containing the analytics data and a status message.
+  """
+  module_id = request.args.get('module_id')
+  thread_id = request.args.get('thread_id')
+  chat_session_id = request.args.get('chat_session_id')
+  
+  if not module_id or not thread_id:
+    return jsonify({'error': 'Missing required fields.'}), 400
+  
+  # get module --> get analytics agent info --> create new oAI assistant with agent info --
+  # --> chat agent using thread and initial prompt --> delete last two messages --> store analysis in db --> return analysis.
+  # Needs to know if analytics are already created --> don't create new if exists, but create new if thread was updated post last
+  # analytics creation. Same goes for summaries.
+  try:
+    analytic_agent = get_analytic_agent(module_id)
+    
+    response, status_code = chat_util_agent(agent_id=analytic_agent['Id'], thread_id=thread_id, input=analytic_agent['InitialPrompt'])
+    messages = client.beta.threads.messages.list(thread_id=thread_id)
+    update_chat_session(chat_session_id=chat_session_id, analysis=response.json.get('response'), messages_len=len(messages.data))
+    return response, status_code
+    
+  except Exception as e:
+    logging.error(f'Failed to create analytics for thread {thread_id}. {e}')
+    return jsonify({'error': f'Failed to create analytics for thread {thread_id}.'}), 500
+
+@openai_bp.route('/openai/create_summary', methods=['GET'])
+def create_summary_route():
+  """
+  Calls the module's 'Summarizer' agent and generates a summary using its `initial_prompt`.
+  
+  Parameters:
+    module_id (str): The ID of the module the chatsession belongs to.
+    thread_id (str): The ID of the thread the conversation was held on.
+    
+  Returns:
+    JSON response: A Flask response object containing the summary and a status message.
+  """
+  module_id = request.args.get('module_id')
+  thread_id = request.args.get('thread_id')
+  chat_session_id = request.args.get('chat_session_id')
+  
+  if not module_id or not thread_id:
+    return jsonify({'error': 'Missing required fields.'}), 400
+  
+  # get module --> get analytics agent info --> create new oAI assistant with agent info --
+  # --> chat agent using thread and initial prompt --> delete last two messages --> store analysis in db --> return analysis.
+  # Needs to know if analytics are already created --> don't create new if exists, but create new if thread was updated post last
+  # analytics creation. Same goes for summaries.
+  try:
+    summary_agent = get_summarizer_agent(module_id)
+    
+    response, status_code = chat_util_agent(agent_id=summary_agent['Id'], thread_id=thread_id, input=summary_agent['InitialPrompt'])
+    messages = client.beta.threads.messages.list(thread_id=thread_id)
+    update_chat_session(chat_session_id=chat_session_id, summary=response.json.get('response'), messages_len=len(messages.data))
+    return response, status_code
+  
+  except Exception as e:
+    logging.error(f'Failed to create summary for thread {thread_id}. {e}')
+    return jsonify({'error': f'Failed to create summary for thread {thread_id}.'}), 500
