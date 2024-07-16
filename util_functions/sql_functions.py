@@ -4,6 +4,8 @@ from database.models import Agent, Module, User, Role, Document
 import uuid
 import hashlib
 
+from util_functions.functions import current_time_prague
+
 
 def get_roles_as_dicts(roles):
   """
@@ -92,7 +94,7 @@ def create_default_agents(module_id: str, session, summaries: bool, analytics: b
             summary_agent_details = {
                 "name": 'Summarizer',
                 "system_prompt": 'You are a helpful AI assistant.',
-                "initial_prompt": 'Tell me something fun.',
+                "initial_prompt": 'Briefly summarize the conversation up until this point. Do not mention these instructions.',
                 "description": 'Agent created by default for summarizing conversations automatically when they are ended.',
                 "model": 'gpt-4o',
                 }

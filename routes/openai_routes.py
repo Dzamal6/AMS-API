@@ -3,7 +3,7 @@ from flask import Blueprint, jsonify, request
 from flask.helpers import make_response
 from config import OPENAI_CLIENT as client, chat_session_serializer, agent_session_serializer
 from services.sql_service import get_analytic_agent, get_module_by_id, get_summarizer_agent, update_chat_session
-from util_functions.functions import get_agent_session, get_chat_session
+from util_functions.functions import get_agent_session, get_chat_session, get_module_session
 from services.openai_service import batch_delete_agents, batch_delete_files, chat_ta, chat_util_agent, create_agent, delete_agent, initialize_agent_chat, safely_end_chat_session
 from openai import NotFoundError
 
@@ -238,8 +238,12 @@ def check_thread_session():
     400 Bad Request: Either failed to establish a connection, there was an error fetching session information, or failed to fetch thread messages from OpenAI.
   """
   chat_session = get_chat_session()
+  module_session = get_module_session()
+  module_name = ''
+  if module_session and 'Name' in module_session:
+    module_name = module_session['Name']
   if chat_session is None:
-    return jsonify({'success': 'Established connection but no chat session is present'}), 200
+    return jsonify({'success': 'Established connection but no chat session is present', 'module_name': module_name}), 200
   
   if chat_session and 'agent_ids' in chat_session and 'thread_id' in chat_session:
     agent_id = chat_session['agent_ids'][len(chat_session['agent_ids']) - 1]
@@ -262,16 +266,17 @@ def check_thread_session():
 
         return jsonify({
             'message': "Established connection and found an existing chat_session and retrieved its data.",
+            'module_name': module_name,
             'agent_id': agent_id,
             'thread_id': thread_id,
             'messages': messages_list
         }), 200
     else:
-      return jsonify({'message': "Established connection and found an existing chat_session but failed to retrieve thread messages", 'agent_id': agent_id, 'thread_id': thread_id}), 200
+      return jsonify({'message': "Established connection and found an existing chat_session but failed to retrieve thread messages", 'agent_id': agent_id, 'thread_id': thread_id, 'module_name': module_name}), 200
   elif chat_session and 'agent_ids' in chat_session:
     for agent in chat_session['agent_ids']:
       delete_agent(agent_id=agent)
-    response = make_response(jsonify({'error': 'Chat session is present but missing required data. Cleaning up...'}), 400)
+    response = make_response(jsonify({'error': 'Chat session is present but missing required data. Cleaning up...', 'module_name': module_name}), 400)
     response.set_cookie('chat_session',
                         '',
                         max_age=0,
@@ -280,7 +285,7 @@ def check_thread_session():
                         samesite='none',)
     return response
   elif chat_session:
-    response = make_response(jsonify({'error': 'Chat_session is present but missing required data. Cleaning up...'}), 400)
+    response = make_response(jsonify({'error': 'Chat_session is present but missing required data. Cleaning up...', 'module_name': module_name}), 400)
     response.set_cookie('chat_session',
                         '',
                         max_age=0,
@@ -289,7 +294,7 @@ def check_thread_session():
                         samesite='none',)
     return response
   else:
-    return jsonify({'error': 'Failed to establish connection.'}), 400
+    return jsonify({'error': 'Failed to establish connection.', 'module_name': module_name}), 400
   
 @openai_bp.route('/openai/end_chat', methods=['DELETE'])
 def end_session_chat():

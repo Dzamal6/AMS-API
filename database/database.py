@@ -1,16 +1,19 @@
+from datetime import datetime, timedelta, timezone
+import logging
 from sqlalchemy import create_engine
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import NullPool 
 from config import POSTGRES_CONNECTION_STRING
 from database.base import Base
-from database.models import User, Role, Document
+from database.models import ChatSession, User, Role, Document
 from util_functions.functions import hash_password
 import uuid
 from contextlib import contextmanager
 import os
 import hashlib
 from werkzeug.utils import secure_filename
+from apscheduler.schedulers.blocking import BlockingScheduler
 
 engine = create_engine(POSTGRES_CONNECTION_STRING, pool_size=4, max_overflow=0, pool_recycle=60) # set echp=True for elaborate logging
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -120,3 +123,21 @@ def upload_documents():
 
   except Exception as e:
       print(f"An error occurred during document upload: {e}")
+      
+def delete_old_chat_sessions():
+  """
+  Removes old chat sessions from the database after 60 days post their last modified date. This needs to happen mostly because OpenAI only keeps thread messages for
+  60 days. 
+  """
+  try:
+    with session_scope() as session:
+      cutoff_date = datetime.now(timezone.utc) - timedelta(days=60)
+      session.query(ChatSession).filter(ChatSession.last_modified < cutoff_date).delete(synchronize_session=False)
+      session.commit()
+  except SQLAlchemyError as e:
+    logging.error(f'Encountered an SQLAlchemy error while attempting to delete old ChatSessions! {e}')
+  except Exception as e:
+    logging.error(f'Failed to delete old ChatSessions! {e}')
+    
+scheduler = BlockingScheduler()
+scheduler.add_job(delete_old_chat_sessions, 'interval', days=1)

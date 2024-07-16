@@ -1306,7 +1306,14 @@ def db_create_chat_session(thread_id: str, module_id: str, user_id: str):
   """
   try:
     with session_scope() as session:
-      chat_session = ChatSession(id=uuid.uuid4(), threadID=thread_id, moduleID=uuid.UUID(module_id), userID=uuid.UUID(user_id))
+      module = session.query(Module).filter(Module.id == module_id).first()
+      chat_session = ChatSession(id=uuid.uuid4(),
+                                 threadID=thread_id,
+                                 moduleID=uuid.UUID(module_id),
+                                 userID=uuid.UUID(user_id),
+                                 convo_analytics=module.convo_analytics,
+                                 summaries=module.summaries,
+                                 module_name=module.name)
       session.add(chat_session)
       session.commit()
       return {
@@ -1338,15 +1345,14 @@ def retrieve_chat_sessions(user_id: str):
   try:
     with session_scope() as session:
       chat_sessions = session.query(ChatSession).filter(ChatSession.userID == uuid.UUID(user_id)).all()
-
       return [{
         "Id": str(chat_session.id),
-        'UserName': get_user_name(chat_session.userID, session),
+        'UserName': chat_session.user.email,
         'LastAgent': str(chat_session.last_agent),
-        'ModuleName': get_module(chat_session.moduleID, session).name,
+        'ModuleName': chat_session.module_name,
         'ModuleID': str(chat_session.moduleID),
-        'Analytics': get_module(chat_session.moduleID, session).convo_analytics,
-        'Summaries': get_module(chat_session.moduleID, session).summaries,
+        'Analytics': chat_session.convo_analytics,
+        'Summaries': chat_session.summaries,
         'Analysis': chat_session.analysis,
         'Summary': chat_session.summary,
         'MessagesLen': chat_session.messages_len,
@@ -1354,10 +1360,8 @@ def retrieve_chat_sessions(user_id: str):
         'Created': chat_session.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
         'LastModified': chat_session.last_modified.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
       } for chat_session in chat_sessions]
-  except NoResultFound as e:
-    return []
   except SQLAlchemyError as e:
-    logging.error(f"An error occurred while retrieving chat sessions for user {user_id}. {e}")
+    logging.error(f"An SQLAlchemy error occurred while retrieving chat sessions for user {user_id}. {e}")
     return None
   except Exception as e:
     logging.error(f"An error occurred while retrieving chat sessions for user {user_id}. {e}")
@@ -1420,12 +1424,12 @@ def update_chat_session(chat_session_id: str,
       
       return {
         "Id": str(chat_session.id),
-        'UserName': get_user_name(chat_session.userID, session),
+        'UserName': chat_session.user.email,
         'LastAgent': str(chat_session.last_agent),
-        'ModuleName': get_module(chat_session.moduleID, session).name,
+        'ModuleName': chat_session.module_name,
         'ModuleID': str(chat_session.moduleID),
-        'Analytics': get_module(chat_session.moduleID, session).convo_analytics,
-        'Summaries': get_module(chat_session.moduleID, session).summaries,
+        'Analytics': chat_session.convo_analytics,
+        'Summaries': chat_session.summaries,
         'Analysis': chat_session.analysis,
         'Summary': chat_session.summary,
         'MessagesLen': chat_session.messages_len,

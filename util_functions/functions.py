@@ -373,3 +373,10 @@ def login_user(user: dict[str, any] | dict, remember:bool):
                       samesite='none',
                       max_age=None if not remember else 1209600)
   return response
+
+def current_time_prague():
+  """
+  Returns the current time in the Europe/Prague or UTC+2 timezone.
+  """
+  utc_plus_2 = pytz.timezone('Etc/GMT-2')
+  return datetime.now(utc_plus_2)

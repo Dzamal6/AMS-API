@@ -1,8 +1,11 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Table, LargeBinary, Boolean
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Table, LargeBinary, Boolean, event
 from sqlalchemy.orm import relationship, backref
 from database.base import Base
 from datetime import datetime
 from sqlalchemy.dialects.postgresql import UUID
+
+from database.utils import set_created, set_last_modified
+from util_functions.functions import current_time_prague
 
 # MIGRATING CMDS: alembic revision --autogenerate -m "desc"
 # MIGRATING CMDS: alembic upgrade head
@@ -21,11 +24,13 @@ class User(Base):
                             secondary='user_module',
                             back_populates='users')
   transcripts = relationship('Transcript', backref='user', lazy='dynamic')
-  chat_sessions = relationship('ChatSession', backref='user', lazy='dynamic')
-  created = Column(DateTime, default=datetime.utcnow)
+  chat_sessions = relationship('ChatSession', back_populates='user')
+  created = Column(DateTime, default=current_time_prague())
   last_modified = Column(DateTime,
-                         default=datetime.utcnow,
-                         onupdate=datetime.utcnow)
+                         default=current_time_prague(),
+                         onupdate=current_time_prague())
+event.listen(User, 'before_insert', set_created)
+event.listen(User, 'before_update', set_last_modified)
 
 
 class Role(Base):
@@ -33,10 +38,12 @@ class Role(Base):
   id = Column(UUID(as_uuid=True), primary_key=True, index=True)
   name = Column(String, unique=True, index=True)
   users = relationship('User', secondary='user_roles', back_populates='roles')
-  created = Column(DateTime, default=datetime.utcnow)
+  created = Column(DateTime, default=current_time_prague())
   last_modified = Column(DateTime,
-                         default=datetime.utcnow,
-                         onupdate=datetime.utcnow)
+                         default=current_time_prague(),
+                         onupdate=current_time_prague())
+event.listen(Role, 'before_insert', set_created)
+event.listen(Role, 'before_update', set_last_modified)
   
 class Module(Base):
        __tablename__ = 'modules'
@@ -54,10 +61,12 @@ class Module(Base):
                             secondary='document_module',
                             back_populates="modules",)
        agents = relationship('Agent', back_populates='module', cascade='all, delete-orphan')
-       created = Column(DateTime, default=datetime.utcnow)
+       created = Column(DateTime, default=current_time_prague())
        last_modified = Column(DateTime,
-                            default=datetime.utcnow,
-                            onupdate=datetime.utcnow)
+                            default=current_time_prague(),
+                            onupdate=current_time_prague())
+event.listen(Module, 'before_insert', set_created)
+event.listen(Module, 'before_update', set_last_modified)
 
 
 class TokenUsage(Base):
@@ -67,7 +76,9 @@ class TokenUsage(Base):
   output_tokens = Column(Integer)
   input_cost = Column(Integer)
   output_cost = Column(Integer)
-  date = Column(DateTime, default=datetime.utcnow)
+  date = Column(DateTime, default=current_time_prague())
+event.listen(TokenUsage, 'before_insert', set_created)
+event.listen(TokenUsage, 'before_update', set_last_modified)
 
 
 class Transcript(Base):
@@ -81,10 +92,13 @@ class Transcript(Base):
                   ForeignKey('users.id', ondelete='SET NULL'),
                   nullable=True)
   username = Column(String, nullable=False)
-  created = Column(DateTime, default=datetime.utcnow)
+  created = Column(DateTime, default=current_time_prague())
   last_modified = Column(DateTime,
-                         default=datetime.utcnow,
-                         onupdate=datetime.utcnow)
+                         default=current_time_prague(),
+                         onupdate=current_time_prague())
+  
+event.listen(Transcript, 'before_insert', set_created)
+event.listen(Transcript, 'before_update', set_last_modified)
 
 
 class ChatSession(Base):
@@ -93,9 +107,13 @@ class ChatSession(Base):
   userID = Column(UUID(as_uuid=True),
                   ForeignKey('users.id', ondelete='SET NULL'),
                   nullable=True)
+  user = relationship('User', back_populates='chat_sessions')
   moduleID = Column(UUID(as_uuid=True),
                     ForeignKey('modules.id', ondelete='SET NULL'),
                     nullable=True)
+  module_name = Column(String(25), nullable=True, index=True)
+  convo_analytics = Column(Boolean, default=False)
+  summaries = Column(Boolean, default=False)
   threadID = Column(String(150), nullable=False, index=True)
   agents = relationship("Agent",
                         secondary='agent_chat',
@@ -104,10 +122,12 @@ class ChatSession(Base):
   analysis = Column(String, nullable=True, index=True)
   last_agent = Column(UUID(as_uuid=True), ForeignKey('agents.id', ondelete='SET NULL'), nullable=True)
   messages_len = Column(Integer, nullable=True, default=0)
-  created = Column(DateTime, default=datetime.utcnow)
+  created = Column(DateTime, default=current_time_prague())
   last_modified = Column(DateTime,
-                         default=datetime.utcnow,
-                         onupdate=datetime.utcnow)
+                         default=current_time_prague(),
+                         onupdate=current_time_prague())
+event.listen(ChatSession, 'before_insert', set_created)
+event.listen(ChatSession, 'before_update', set_last_modified)
 
 
 class Document(Base):
@@ -120,10 +140,12 @@ class Document(Base):
                         secondary='agent_file',
                         back_populates='documents')
   modules = relationship("Module", secondary='document_module', back_populates='documents')
-  created = Column(DateTime, default=datetime.utcnow)
+  created = Column(DateTime, default=current_time_prague())
   last_modified = Column(DateTime,
-                         default=datetime.utcnow,
-                         onupdate=datetime.utcnow)
+                         default=current_time_prague(),
+                         onupdate=current_time_prague())
+event.listen(Document, 'before_insert', set_created)
+event.listen(Document, 'before_update', set_last_modified)
 
 # POINTS TO (next agent) --> works only if flow control is AI
 class Agent(Base):
@@ -148,10 +170,12 @@ class Agent(Base):
   chat_sessions = relationship('ChatSession',
                                secondary='agent_chat',
                                back_populates='agents')
-  created = Column(DateTime, default=datetime.utcnow)
+  created = Column(DateTime, default=current_time_prague())
   last_modified = Column(DateTime,
-                         default=datetime.utcnow,
-                         onupdate=datetime.utcnow)
+                         default=current_time_prague(),
+                         onupdate=current_time_prague())
+event.listen(Agent, 'before_insert', set_created)
+event.listen(Agent, 'before_update', set_last_modified)
   
 
 agent_file_table = Table(

@@ -1,3 +1,4 @@
+from datetime import datetime, timezone, timedelta
 from authlib.integrations.flask_client import OAuth
 from flask import Flask
 from flask_cors import CORS
@@ -9,6 +10,7 @@ from database.base import Base
 import database.models
 import logging
 from dotenv import load_dotenv
+import pytz
 
 load_dotenv()
 
@@ -20,7 +22,7 @@ app.config['SECRET_KEY'] = config.SECRET_KEY
 app.config['LOGIN_KEY'] = config.LOGIN_KEY
 
 config.limiter.init_app(app)
-
+print(f'DATETIMES: {datetime.utcnow}, {datetime.now(pytz.timezone('Etc/GMT-2'))}')
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO, handlers=[logging.StreamHandler()])
 # logging.getLogger('sqlalchemy.engine').setLevel(logging.DEBUG)
 

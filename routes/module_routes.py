@@ -133,7 +133,6 @@ Status Codes:
 Access Control:
     Only admin users can create modules.
   """
-  print(request.json.get('module'))
   data = request.json.get('module')
   name = data['Name']
   description = data['Description']
