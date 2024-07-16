@@ -1,6 +1,9 @@
 import logging
 from flask import jsonify
-from flask.helpers import make_response
+from flask.helpers import make_response, stream_with_context
+from flask.wrappers import Response
+from openai.types.beta.assistant_stream_event import ThreadMessageDelta
+from openai.types.beta.threads.text_delta_block import TextDeltaBlock
 import tiktoken
 import openai
 from openai import BadRequestError, NotFoundError
@@ -8,9 +11,9 @@ import os
 import json
 from packaging import version
 from config import OPENAI_CLIENT as client, chat_session_serializer, agent_session_serializer
-import time
+from time import sleep
 from util_functions.functions import get_agent_session, get_chat_session, get_module_session, get_user_info
-from services.sql_service import db_create_chat_session, get_agent_data
+from services.sql_service import db_create_chat_session, get_agent_data, update_chat_session
 from util_functions.oai_functions import include_init_message, safely_delete_last_messages, wrap_message
 
 required_version = version.parse("1.1.1")
@@ -33,7 +36,7 @@ def chat_ta(assistant_id:str, thread_id:str, user_input:str, initial:bool=False,
       assistant_id (str): The unique identifier for the OpenAI assistant.
       thread_id (str): The identifier for the conversation thread.
       user_input (str): The user's message to the AI assistant.
-      initial (bool): If the user_input comes from an initial interaction. Defaults to False.
+      initial (bool): If the user_input comes from an initial interaction. Defaults to False. This is meant for initializing new agents amidst a conversation, it is not needed at the beginning.
       agent_id (str): If `initial` is set to True, an `agent_id` is required to find the initial wrapper prompt.
 
   Returns:
@@ -95,44 +98,41 @@ def chat_ta(assistant_id:str, thread_id:str, user_input:str, initial:bool=False,
   client.beta.threads.messages.create(thread_id=thread_id,
                                       role="user",
                                       content=wrapper)
-  run = client.beta.threads.runs.create(thread_id=thread_id,
-                                        assistant_id=assistant_id)
-  start_time = time.time()
-  while True:
-    run = client.beta.threads.runs.retrieve(thread_id=thread_id,
-                                                   run_id=run.id)
+  stream = client.beta.threads.runs.create(thread_id=thread_id,
+                                        assistant_id=assistant_id, stream=True)
   
-    if run.status == "completed":
-      logging.info(f'Prompt tokens used: {run.usage.prompt_tokens}, Completion tokens used: {run.usage.completion_tokens}')
-      # if initial: --> This placement is better for ensuring the messages are only deleted if the chat is completed, but the response will have context of the deleted messages.
-      #   safely_delete_last_messages(thread_id=thread_id)
-      break
-    if run.status not in ['completed', 'queued', 'in_progress']:
-      logging.error(f'Run status failed with status: {run.status}')
-      logging.info(f'Prompt tokens used: {run.usage.prompt_tokens}')
-      return {'error': f'Run failed with status: {run.status}'}
+  for event in stream:  
+    if isinstance(event, ThreadMessageDelta):
+      if isinstance(event.data.delta.content[0], TextDeltaBlock):
+        yield event.data.delta.content[0].text.value
+      sleep(0.05)
+        
+  # start_time = time.time()
+  # while True:
+  #   run = client.beta.threads.runs.retrieve(thread_id=thread_id,
+  #                                                  run_id=run.id)
   
-    if time.time() - start_time > 55:
-      print("Timeout reached")
-      return {'error': 'timeout'}
+  #   if run.status == "completed":
+  #     logging.info(f'Prompt tokens used: {run.usage.prompt_tokens}, Completion tokens used: {run.usage.completion_tokens}')
+  #     # if initial: --> This placement is better for ensuring the messages are only deleted if the chat is completed, but the response will have context of the deleted messages.
+  #     #   safely_delete_last_messages(thread_id=thread_id)
+  #     yield run.
+  #     break
+  #   if run.status not in ['completed', 'queued', 'in_progress']:
+  #     logging.error(f'Run status failed with status: {run.status}')
+  #     logging.info(f'Prompt tokens used: {run.usage.prompt_tokens}')
+  #     return {'error': f'Run failed with status: {run.status}'}
   
-  messages = client.beta.threads.messages.list(thread_id=thread_id)
-  response = messages.data[0].content[0].text.value
+  #   if time.time() - start_time > 55:
+  #     print("Timeout reached")
+  #     return {'error': 'timeout'}
   
-  print(f"Assistant Response: {response}")
+  # messages = client.beta.threads.messages.list(thread_id=thread_id)
+  # response = messages.data[0].content[0].text.value
   
-  # Token Counting Response
-  # out_tokens = len(encoding.encode(response))
-  # out_cost_tok = (0.03 / 1000) * out_tokens
-  # print(
-  #     f"Number of tokens response: {out_tokens}\nCost of tokens: {out_cost_tok}"
-  # )
+  # print(f"Assistant Response: {response}")
   
-  # Token Updates
-  # update_assistant_tokens(assistant_name, inp_tokens, inp_cost_tok, out_tokens,
-  #                         out_cost_tok)
-  
-  return {'success': response}
+  # return {'success': response}
 
 
 def create_agent(agent_id):
@@ -269,12 +269,6 @@ def initialize_agent_chat(agent_id: str, thread_id: str, user_input: str):
   if not new_oai_agent_id or new_oai_agent_id is None:
     return jsonify({'error': 'Agent not found'}), 404
   
-  chat = chat_ta(new_oai_agent_id, thread_id, user_input=user_input, initial=True, agent_id=agent_id)
-
-  if 'error' in chat:
-    print(f"Error: {chat['error']}")
-    return jsonify({'error': chat['error']}), 400
-    
   agent_serializer = agent_session_serializer
   # IMPORTANT: agent_id: Database-stored agent, oai_agent_id: OpenAI ID of the temp agent, file_ids: OpenAI IDs of temporarily stored files on OpenAI.
   agent_data = agent_serializer.dumps({'agent_id': agent_id, 'oai_agent_id': new_oai_agent_id, 'file_ids': file_ids})
@@ -309,8 +303,22 @@ def initialize_agent_chat(agent_id: str, thread_id: str, user_input: str):
   logging.info(f"CURRENT CHAT SESSION DATA: 'agent_ids': {agent_ids}, 'thread_id': {thread_id}, 'file_ids': {file_ids}")
   if isinstance(session_data, bytes):
     session_data = session_data.decode('utf-8')
+  
+  @stream_with_context
+  def stream_response():
+    for content in chat_ta(new_oai_agent_id, thread_id, user_input=user_input, initial=True, agent_id=agent_id):
+      yield content
+  # print(f'ASSISTANT RESPONSE: {chat}')
+
+  # if 'error' in chat:
+  #   print(f"Error: {chat['error']}")
+  #   return jsonify({'error': chat['error']}), 400
     
-  response = make_response(jsonify({'message': 'Created new agent and set its cookie.', 'thread_id': thread_id, 'agent_id': new_oai_agent_id, 'response': chat['success']}), 200)
+  # response = make_response(jsonify({'message': 'Created new agent and set its cookie.', 'thread_id': thread_id, 'agent_id': new_oai_agent_id}, chat), 200)
+  response = Response(stream_response(), content_type='text/plain', status=200)
+  response.headers.add('Access-Control-Expose-Headers', 'X-Thread-ID, X-Agent-ID')
+  response.headers.add('X-Thread-ID', thread_id)
+  response.headers.add('X-Agent-ID', agent_id)
   response.set_cookie('chat_session',
                       session_data,
                       httponly=True,
@@ -435,7 +443,7 @@ def safely_end_chat_session():
   
   return {'message': 'Agents and files removed from OpenAI.'}, 200
 
-def chat_util_agent(agent_id: str, thread_id: str, input: str):
+def chat_util_agent(agent_id: str, thread_id: str, input: str, chat_session_id: str, config: str):
   """
   Initializes, messages and then deletes a utility agent. Intended for utility operations like conducting analysis or
   summaries at the end of a conversation.
@@ -444,18 +452,30 @@ def chat_util_agent(agent_id: str, thread_id: str, input: str):
     agent_id (str): The ID of the database-stored agent to be used.
     thread_id (str): The ID of the thread the chat is being held on.
     input (str): The input to be sent to the agent. This should be a thoroughly curated prompt so that the agent carries the operation out correctly and consistently.
+    chat_session_id (str): The ID of the chat session the response will belong to.
+    config (str): Either 'analysis' or 'summary'. Used for determining whether to store the response as an analysis or a summary.
     
   Returns:
     dict: A dictionary with either a 'success' key containing the assistant's response or an 'error' key with an error message.
   """
   oai_agent_id, file_ids = create_agent(agent_id=agent_id)
-  chat = chat_ta(assistant_id=oai_agent_id, thread_id=thread_id, user_input=input)
   
-  if 'error' in chat:
-    print(f"Error: {chat['error']}")
-    safely_delete_last_messages(thread_id=thread_id, config=1)
-    return jsonify({'error': chat['error']}), 400
-  safely_delete_last_messages(thread_id=thread_id)
-  client.beta.assistants.delete(assistant_id=oai_agent_id)
+  @stream_with_context
+  def stream_response():
+    full_response = ''
+    try:
+      for content in chat_ta(assistant_id=oai_agent_id, thread_id=thread_id, user_input=input):
+        full_response += content
+        yield content
+    finally:
+      safely_delete_last_messages(thread_id=thread_id)
+      client.beta.assistants.delete(assistant_id=oai_agent_id)
+      messages = client.beta.threads.messages.list(thread_id=thread_id)
+      if config == 'analysis':
+        update_chat_session(chat_session_id=chat_session_id, analysis=full_response, messages_len=len(messages.data))
+      elif config == 'summary':
+        update_chat_session(chat_session_id=chat_session_id, summary=full_response, messages_len=len(messages.data))
+
+  response = Response(stream_response(), content_type='text/plain', status=200)
   
-  return jsonify({'message': 'Generated analysis.', 'response': chat['success']}), 200
+  return response

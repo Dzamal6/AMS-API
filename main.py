@@ -22,7 +22,6 @@ app.config['SECRET_KEY'] = config.SECRET_KEY
 app.config['LOGIN_KEY'] = config.LOGIN_KEY
 
 config.limiter.init_app(app)
-print(f'DATETIMES: {datetime.utcnow}, {datetime.now(pytz.timezone('Etc/GMT-2'))}')
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO, handlers=[logging.StreamHandler()])
 # logging.getLogger('sqlalchemy.engine').setLevel(logging.DEBUG)
 

@@ -1,6 +1,7 @@
 import logging
 from flask import Blueprint, jsonify, request
-from flask.helpers import make_response
+from flask.helpers import make_response, stream_with_context
+from flask.wrappers import Response
 from config import OPENAI_CLIENT as client, chat_session_serializer, agent_session_serializer
 from services.sql_service import get_analytic_agent, get_module_by_id, get_summarizer_agent, update_chat_session
 from util_functions.functions import get_agent_session, get_chat_session, get_module_session
@@ -81,9 +82,8 @@ def initialize_chat():
       404 Not Found: Agent with the specified ID not found.
       400 Bad Request: Failed to initialize agent or there was an error fetching its response.
   """
-  # TODO: Client (calls init_chat(agent1_id, thread:none)) --> Conduct conversation on thread --> "END OF SIMULATION" (or other indicator) --> Client (calls init_chat(agent_pointer, thread:existing thread))
   agent_id = request.json.get('agent_id')
-  thread_id = request.json.get('thread_id') # If a thread id is provided, don't creat a new one, use the provided one.
+  thread_id = request.json.get('thread_id')
   user_input = request.json.get('message')
   
   if not agent_id or not user_input:
@@ -172,29 +172,24 @@ def openai_chat():
   if not agent_id or not thread_id or not user_input:
     print(f"Missing required parameters: agent_id={agent_id}, thread_id={thread_id}, user_input={user_input}")
     return jsonify({'error': 'Missing required fields.'}), 400
-
-  chat = chat_ta(agent_id, thread_id, user_input)
-
-  if 'error' in chat:
-    print(f"Error: {chat['error']}")
-    return jsonify({'error': chat['error']}), 400
   
-  agent_session = get_agent_session()
-  switch_agent, response = check_switch_agent(chat['success'], 'SWITCH AGENT') # ADD switch_agent_flag to either agent table or module table so admin can change it
-  if switch_agent:
-    logging.info('Switch detected! Agent should swap to its pointer agent.')
-    switch_agent = get_switch_agent(agent_session=agent_session)
-    if switch_agent is None:
-      return jsonify({'error': 'Failed to obtain switch agent'})
-    else:
-      # serializer = agent_session_serializer
-      # agent_session_data = serializer.dumps(switch_agent)
-      # res = make_response(jsonify({'message': 'Retrieved response', 'response': response, 'switch_agent': switch_agent}), 200)
-      # res.set_cookie('agent_session', agent_session_data, httponly=True, secure=True, samesite='none', max_age=604800)
-      logging.info(f'Switching to agent {switch_agent['Id']}')
-      return initialize_agent_chat(agent_id=switch_agent['Id'], thread_id=thread_id, user_input=user_input)
+  # agent_session = get_agent_session()
+  # switch_agent, response = check_switch_agent(chat['success'], 'SWITCH AGENT') # ADD switch_agent_flag to either agent table or module table so admin can change it
+  # if switch_agent:
+  #   logging.info('Switch detected! Agent should swap to its pointer agent.')
+  #   switch_agent = get_switch_agent(agent_session=agent_session)
+  #   if switch_agent is None:
+  #     return jsonify({'error': 'Failed to obtain switch agent'})
+  #   else:
+  #     logging.info(f'Switching to agent {switch_agent['Id']}')
+  #     return initialize_agent_chat(agent_id=switch_agent['Id'], thread_id=thread_id, user_input=user_input)
     
-  return jsonify({'message': 'Retrieved response', 'response': response, 'switch_agent': switch_agent}), 200
+  @stream_with_context
+  def stream_response():
+    for content in chat_ta(agent_id, thread_id, user_input):
+      yield content
+  # return jsonify({'message': 'Retrieved response', 'response': response, 'switch_agent': switch_agent}), 200
+  return Response(stream_response(), content_type='text/plain', status=200)
 
 
 @openai_bp.route('/openai/get_models', methods=['GET'])
@@ -351,18 +346,15 @@ def create_analytics_route():
   
   if not module_id or not thread_id:
     return jsonify({'error': 'Missing required fields.'}), 400
-  
-  # get module --> get analytics agent info --> create new oAI assistant with agent info --
-  # --> chat agent using thread and initial prompt --> delete last two messages --> store analysis in db --> return analysis.
-  # Needs to know if analytics are already created --> don't create new if exists, but create new if thread was updated post last
-  # analytics creation. Same goes for summaries.
+
   try:
     analytic_agent = get_analytic_agent(module_id)
-    
-    response, status_code = chat_util_agent(agent_id=analytic_agent['Id'], thread_id=thread_id, input=analytic_agent['InitialPrompt'])
-    messages = client.beta.threads.messages.list(thread_id=thread_id)
-    update_chat_session(chat_session_id=chat_session_id, analysis=response.json.get('response'), messages_len=len(messages.data))
-    return response, status_code
+    response = chat_util_agent(agent_id=analytic_agent['Id'],
+                              thread_id=thread_id,
+                              input=analytic_agent['InitialPrompt'],
+                              chat_session_id=chat_session_id,
+                              config='analysis')
+    return response
     
   except Exception as e:
     logging.error(f'Failed to create analytics for thread {thread_id}. {e}')
@@ -387,17 +379,14 @@ def create_summary_route():
   if not module_id or not thread_id:
     return jsonify({'error': 'Missing required fields.'}), 400
   
-  # get module --> get analytics agent info --> create new oAI assistant with agent info --
-  # --> chat agent using thread and initial prompt --> delete last two messages --> store analysis in db --> return analysis.
-  # Needs to know if analytics are already created --> don't create new if exists, but create new if thread was updated post last
-  # analytics creation. Same goes for summaries.
   try:
     summary_agent = get_summarizer_agent(module_id)
-    
-    response, status_code = chat_util_agent(agent_id=summary_agent['Id'], thread_id=thread_id, input=summary_agent['InitialPrompt'])
-    messages = client.beta.threads.messages.list(thread_id=thread_id)
-    update_chat_session(chat_session_id=chat_session_id, summary=response.json.get('response'), messages_len=len(messages.data))
-    return response, status_code
+    response = chat_util_agent(agent_id=summary_agent['Id'],
+                              thread_id=thread_id,
+                              input=summary_agent['InitialPrompt'],
+                              chat_session_id=chat_session_id,
+                              config='summary')
+    return response
   
   except Exception as e:
     logging.error(f'Failed to create summary for thread {thread_id}. {e}')
