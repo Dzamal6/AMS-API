@@ -2,7 +2,7 @@ from flask import Blueprint, request, jsonify, make_response, current_app
 import requests
 from services.openai_service import safely_end_chat_session
 from util_functions.functions import check_module_permission, check_user_modules, decrypt_token, encrypt_token, get_agent_session, get_chat_session, get_module_session, roles_required, get_user_info, check_user_projects, check_admin
-from services.sql_service import create_new_module, delete_module, get_all_modules, get_module_by_id, upload_agent_metadata
+from services.sql_service import create_new_module, delete_module, get_all_modules, get_module_by_id, update_module, upload_agent_metadata
 from config import FERNET_KEY, module_session_serializer
 
 module_bp = Blueprint('module', __name__)
@@ -196,6 +196,51 @@ def delete_module_route():
     return jsonify({'message': 'Module deleted from the database.'}), 200
   else:
     return jsonify({'message': 'Could not delete module.'}), 400
+
+@module_bp.route('/modules', methods=['PATCH'])
+@roles_required('admin')
+def update_module_route():
+    """
+    Updates a module in the database. Existing ChatSessions are not updated. If `summaries` or `analytics` is changed
+    here, the existing ChatSessions remain configured with the previous module settings.
+    
+    URL:
+    - PATCH /modules
+  
+    Parameters:
+        module_id (str): The ID of the module to be updated.
+        name (str): The name of the module.
+        description (str): The description of the module.
+        flow_control (str): If the module conversations should be directed by AI or the user. The field accepts 'AI' for setting the module to be directed by AI and 'User' to set the module to be directed by the user. This is used e.g. when the user gives tasks that the module's AIs complete or when the user is not supposed to direct the conversation (trainings, interviews where the AI is interviewing the user). If not set, 'User' is assumed by default.
+        voice (bool): Whether the module conversations should be conducted via tts and stt or not.
+        convo_analytics (bool): Whether the module will analyze each saved conversation using AI.
+        summaries (bool): Whether the module will create a short summary of each saved conversation using AI.
+    """
+    data = request.json.get('module')
+    module_id = data['Id']
+    name = data['Name']
+    description = data['Description']
+    flow_control = data['FlowControl']
+    voice = data['Voice']
+    convo_analytics = data['ConvoAnalytics']
+    summaries = data['Summaries']
+     
+    data = update_module(
+        module_id=module_id,
+        name=name,
+        description=description,
+        flow_control=flow_control,
+        voice=voice,
+        convo_analytics=convo_analytics,
+        summaries=summaries)  
+    if data is None:
+        return jsonify({'error':
+                "An error occurred while updating the module."}), 400
+        
+    return jsonify({
+            'message': 'Module updated.',
+            'module': data
+        }), 200
 
 @module_bp.route('/modules/session', methods=['DELETE'])
 def reset_module_session():

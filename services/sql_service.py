@@ -14,221 +14,6 @@ import io
 from typing import cast
 from psycopg2.errors import InvalidTextRepresentation
 
-
-def get_all_transcripts():
-  """
-  Retrieves all transcripts from the database.
-
-  Returns:
-      list of dict or None: A list of dictionaries representing the transcript data, or None if no transcripts are found or an error occurs.
-  """
-  try:
-    with session_scope() as session:
-      transcripts = session.query(Transcript).all()
-
-      if not transcripts:
-        print('No transcripts found')
-        return None
-
-      return [{
-          'Id':
-          str(transcript.id),
-          'TranscriptID':
-          str(transcript.transcriptID),
-          'SessionID':
-          str(transcript.sessionID),
-          'UserID':
-          str(transcript.userID),
-          'Username':
-          str(transcript.username),
-          "LastModified":
-          transcript.last_modified.strftime("%Y-%m-%d %H:%M:%S"),
-          'Created':
-          transcript.created.strftime("%Y-%m-%d %H:%M:%S")
-      } for transcript in transcripts]
-
-  except SQLAlchemyError as e:
-    print(f"Database Error: {e}")
-    return None
-
-  except Exception as e:
-    print(f"Error: {e}")
-    return None
-
-
-def create_transcript(transcript_id: str, session_id: str, user_id: str,
-                      username: str):
-  """
-  Creates a new transcript record in the database.
-
-  Parameters:
-      transcript_id (str): The unique identifier for the transcript.
-      session_id (str): The session ID associated with the transcript.
-      user_id (str): The user ID associated with the transcript.
-      username (str): The username associated with the transcript.
-
-  Returns:
-      dict or None: A dictionary containing the newly created transcript's ID, or None if the creation fails.
-  """
-  try:
-    with session_scope() as session:
-      transcript = Transcript(id=uuid.uuid4(),
-                              userID=uuid.UUID(user_id),
-                              sessionID=uuid.UUID(session_id),
-                              transcriptID=transcript_id,
-                              username=username)
-
-      session.add(transcript)
-      session.commit()
-
-      return {'Id': str(transcript.id)}
-
-  except SQLAlchemyError as e:
-    print(f"Database Error: {e}")
-    return None
-
-  except Exception as e:
-    print(f"Error: {e}")
-    return None
-
-
-def get_all_chat_sessions():
-  """
-  Retrieves all chat sessions from the database.
-
-  Returns:
-      list of dict or None: A list of dictionaries representing the chat session data, or None if no chat sessions are found or an error occurs.
-  """
-  try:
-    with session_scope() as session:
-      chat_sessions_query = session.query(ChatSession).all()
-      if not chat_sessions_query:
-        print('No chat sessions found.')
-        return None
-
-      return [{
-          "Id":
-          str(chat_session.id),
-          "UserID":
-          str(chat_session.userID),
-          "Created":
-          str(chat_session.created.strftime("%Y-%m-%d %H:%M:%S")),
-          "LastModified":
-          str(chat_session.last_modified.strftime("%Y-%m-%d %H:%M:%S"))
-      } for chat_session in chat_sessions_query]
-
-  except SQLAlchemyError as e:
-    print(f'Database Error: {e}')
-    return None
-  except Exception as e:
-    print(f'Error: {e}')
-    return None
-
-
-def remove_chat_session(sessionID: str):
-  """
-  Removes a specific chat session from the database based on the session ID.
-
-  Parameters:
-      sessionID (str): The unique identifier for the chat session to be deleted.
-
-  Returns:
-      str or None: The session ID of the deleted chat session if successful, None otherwise.
-  """
-  try:
-    uuid.UUID(sessionID)
-  except ValueError:
-    print(f'Invalid session ID: {sessionID}.')
-    return sessionID
-
-  try:
-    with session_scope() as session:
-      chat_session = session.query(ChatSession).filter(
-          ChatSession.id == sessionID)
-
-      if not chat_session:
-        print(f'Database Error 404: Chat session {sessionID} not found.')
-        return None
-
-      chat_session.delete()
-      session.commit()
-      print(f'Chat session {sessionID} deleted.')
-      return sessionID
-
-  except SQLAlchemyError as e:
-    print(f'Database Error: {e}')
-    return None
-  except Exception as e:
-    print(f'Error: {e}')
-    return None
-
-
-def get_user_chat_sessions(user_id: str, module_id: str):
-  """
-  Retrieves chat sessions for a specific user and module from the database.
-
-  Parameters:
-      user_id (str): The user ID.
-      module_id (str): The module ID.
-
-  Returns:
-      list of dict or None: A list of dictionaries representing the user's chat sessions, or None if an error occurs.
-  """
-  try:
-    with session_scope() as session:
-      query_sessions = session.query(ChatSession).filter(
-          ChatSession.userID == uuid.UUID(user_id),
-          ChatSession.moduleID == uuid.UUID(module_id)).all()
-      return [{
-          "Id":
-          str(session.id),
-          "User":
-          session.userID,
-          "Module":
-          session.moduleID,
-          'Created':
-          session.created.strftime("%Y-%m-%d %H:%M:%S"),
-          'LastModified':
-          session.last_modified.strftime("%Y-%m-%d %H:%M:%S")
-      } for session in query_sessions]
-
-  except SQLAlchemyError as e:
-    print(f'Database Error: {e}')
-    return None
-  except Exception as e:
-    print(f'Error: {e}')
-    return None
-
-
-def create_chat_session(user_id: str, module_id: str):
-  """
-  Creates a new chat session in the database.
-
-  Parameters:
-      user_id (str): The ID of the user involved in the chat session.
-      module_id (str): The ID of the module involved in the chat session.
-
-  Returns:
-      dict or None: A dictionary containing the newly created chat session's ID, or None if the creation fails.
-  """
-  try:
-    with session_scope() as session:
-      chat_session = ChatSession(id=uuid.uuid4(),
-                                 userID=user_id,
-                                 moduleID=module_id)
-      session.add(chat_session)
-      session.commit()
-
-      return {'Id': str(chat_session.id)}
-
-  except SQLAlchemyError as e:
-    print(f"Database Error: {e}")
-    return None
-
-  except Exception as e:
-    print(f"Error: {e}")
-    return None
-
 def get_module_by_id(module_id: str):
   """
   Retrieves module details by module ID.
@@ -275,7 +60,13 @@ def get_all_modules():
       modules = [{
         'Id': str(module.id),
         'Name': module.name,
-        'Created': module.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
+        'Description': module.description,
+        'FlowControl': module.flow_control,
+        'Voice': module.voice,
+        'ConvoAnalytics': module.convo_analytics,
+        'Summaries': module.summaries,
+        'Created': module.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
+        'LastModified': module.last_modified.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
       } for module in modules_query]
       return modules
   except Exception as e:
@@ -341,6 +132,85 @@ def create_new_module(
   except Exception as e:
     print(f"An error occurred: {e}")
     return None, 400
+  
+
+def update_module(
+  module_id: str,
+  name: str=None, 
+  description: str=None, 
+  flow_control: str=None, 
+  voice: bool=None, 
+  convo_analytics: bool=None, 
+  summaries: bool=None):
+  """
+  Updates a module in the database. Existing ChatSessions are not updated. If `summaries` or `analytics` is changed
+  here, the existing ChatSessions remain configured with the previous module settings.
+  
+  Parameters:
+    module_id (str): The ID of the module to be updated.
+    name (str): The name of the module.
+    description (str): The description of the module.
+    flow_control (str): If the module conversations should be directed by AI or the user. The field accepts 'AI' for setting the module to be directed by AI and 'User' to set the module to be directed by the user. This is used e.g. when the user gives tasks that the module's AIs complete or when the user is not supposed to direct the conversation (trainings, interviews where the AI is interviewing the user). If not set, 'User' is assumed by default.
+    voice (bool): Whether the module conversations should be conducted via tts and stt or not.
+    convo_analytics (bool): Whether the module will analyze each saved conversation using AI.
+    summaries (bool): Whether the module will create a short summary of each saved conversation using AI.
+  
+  Returns:
+    dict: The updated ChatSession object or None if the operation fails.
+  """
+  try:
+    with session_scope() as session:
+      module = session.query(Module).filter(Module.id == module_id).first()
+      
+      if module is None:
+        logging.error(f'Module {module_id} not found.')
+        return None
+
+      updated_fields = []
+
+      if name is not None and name != module.name:
+        module.name = name
+        updated_fields.append('name')
+      if description is not None and description != module.description:
+        module.description = description
+        updated_fields.append('description')
+      if flow_control is not None and flow_control != module.flow_control:
+        module.flow_control = flow_control
+        updated_fields.append('flow_control')
+      if voice is not None and voice != module.voice:
+        module.voice = voice
+        updated_fields.append('voice')
+      if convo_analytics is not None and convo_analytics != module.convo_analytics:
+        module.convo_analytics = convo_analytics
+        updated_fields.append('convo_analytics')
+      if summaries is not None and summaries != module.summaries:
+        module.summaries = summaries
+        updated_fields.append('summaries')
+      
+      if updated_fields:
+        session.commit()
+        logging.info(f'Module {module_id} updated. Fields changed: {", ".join(updated_fields)}')
+      else:
+        logging.info(f'No changes made to Module {module_id}.')
+
+      return {
+        'Id': str(module.id),
+        'Name': module.name,
+        'Description': module.description,
+        'FlowControl': module.flow_control,
+        'Voice': module.voice,
+        'ConvoAnalytics': module.convo_analytics,
+        'Summaries': module.summaries,
+        'Created': module.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
+        'LastModified': module.last_modified.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
+      }
+  except SQLAlchemyError as e:
+    logging.error(f'SQLAlchemy error updating module {module_id}. {e}')
+    return None
+  except Exception as e:
+    logging.error(f'Error updating module {module_id}. {e}')
+    return None
+
     
 
 def delete_module(module_id: str):
@@ -1294,7 +1164,9 @@ def get_summarizer_agent(module_id):
       
 def db_create_chat_session(thread_id: str, module_id: str, user_id: str):
   """
-  Creates a new ChatSession in the database.
+  Creates a new ChatSession in the database. Assigns the 'convo_analytics' and 'summaries' according to the
+  current module settings. If a module is edited and doesn't have set summaries or analytics anymore, existing chatsessions
+  remain set according to the module settings at the time of creation.
   
   Parameters:
     thread_id (str): The ID of the thread the conversation is held on.
