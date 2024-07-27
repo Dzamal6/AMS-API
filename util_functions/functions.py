@@ -1,10 +1,12 @@
+import logging
+import uuid
 from cryptography.fernet import Fernet
 from datetime import datetime, timedelta
 from flask.helpers import make_response
 import requests
 import pytz
 from concurrent.futures import ThreadPoolExecutor
-from flask import Flask, request, jsonify, current_app
+from flask import Flask, request, jsonify, current_app, g, Response
 import hashlib
 from config import user_session_serializer, module_session_serializer, chat_session_serializer, agent_session_serializer
 from functools import wraps
@@ -380,3 +382,69 @@ def current_time_prague():
   """
   utc_plus_2 = pytz.timezone('Etc/GMT-2')
   return datetime.now(utc_plus_2)
+  
+class CustomResponse(Response): # not used
+  def __init__(self, *args, **kwargs):
+    self.cookies_to_set = kwargs.pop('cookies_to_set', {})
+    super().__init__(*args, **kwargs)
+    
+  def close(self):
+    for cookie_name, cookie_value in self.cookies_to_set.items():
+      logging.info(f'Setting cookie {cookie_name} to {cookie_value}')
+      self.set_cookie('cookie_name', 'cookie_value', httponly=True, secure=True, samesite='None', max_age=604800)
+      
+    super().close()
+    
+def is_valid_uuid(test_uuid, version=4):
+  """
+  Validates if a string is a valid UUID.
+  
+  Parameters:
+    test_uuid (str): The string to be validated.
+    version (int): The version of UUID to be tested. Defaults to 4.
+    
+  Returns:
+    True if the string is a valid UUID and False otherwise.
+  """
+  try:
+    uuid.UUID(test_uuid, version=version)
+  except ValueError:
+    return False
+  return True
+
+import threading
+from functools import wraps
+
+class TimeoutException(Exception):
+  """Exception thrown by the `timeout` decorator when the set time for a function is exceeded."""
+  pass
+
+def timeout(seconds):
+  """
+  Timeout decorator facilitating the measuring of the function it wraps, terminates the function if
+  the time in seconds is exceeded and throws a TimeoutException.
+  
+  Parameters:
+    seconds (int): The number of seconds after which the function will be terminated.
+  """
+  def decorator(func):
+      @wraps(func)
+      def wrapper(*args, **kwargs):
+          result = [TimeoutException(f"Function {func.__name__} timed out after {seconds} seconds")]
+
+          def target():
+              try:
+                  result[0] = func(*args, **kwargs)
+              except Exception as e:
+                  result[0] = e
+
+          thread = threading.Thread(target=target)
+          thread.start()
+          logging.info(f'Timeout is working {seconds}')
+          thread.join(seconds)
+          if isinstance(result[0], BaseException):
+              raise result[0]
+          return result[0]
+
+      return wrapper
+  return decorator

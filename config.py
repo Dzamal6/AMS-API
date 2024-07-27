@@ -45,3 +45,8 @@ ALLOWED_ORIGINS = ['https://127.0.0.1:5173', 'https://localhost:5173', os.enviro
 GOOGLE_SECRET_KEY = 'your_secret_key'
 GOOGLE_CLIENT_ID = os.environ['GOOGLE_CLIENT_ID']
 GOOGLE_CLIENT_SECRET = os.environ['GOOGLE_CLIENT_SECRET']
+
+# Storing, retrieving and manipulating files via Supabase Storage buckets
+SUPABASE_STORAGE_URL=os.environ['SUPABASE_STORAGE_URL']
+SUPABASE_ACCESS_KEY_ID=os.environ['SUPABASE_ACCESS_KEY_ID']
+SUPABASE_S3_ACCESS_KEY=os.environ['SUPABASE_S3_ACCESS_KEY']

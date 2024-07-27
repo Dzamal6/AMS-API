@@ -1,14 +1,16 @@
+import json
 import logging
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, g, current_app, after_this_request
 from flask.helpers import make_response, stream_with_context
 from flask.wrappers import Response
+from openai._exceptions import APIError
 from config import OPENAI_CLIENT as client, chat_session_serializer, agent_session_serializer
 from services.sql_service import get_analytic_agent, get_module_by_id, get_summarizer_agent, update_chat_session
-from util_functions.functions import get_agent_session, get_chat_session, get_module_session
+from util_functions.functions import CustomResponse, TimeoutException, get_agent_session, get_chat_session, get_module_session
 from services.openai_service import batch_delete_agents, batch_delete_files, chat_ta, chat_util_agent, create_agent, delete_agent, initialize_agent_chat, safely_end_chat_session
 from openai import NotFoundError
 
-from util_functions.oai_functions import check_switch_agent, convert_attachments, convert_content, get_switch_agent
+from util_functions.oai_functions import check_switch_agent, convert_attachments, convert_content, convert_content 
 
 openai_bp = Blueprint("openai", __name__)
 
@@ -97,10 +99,24 @@ def initialize_chat():
     if chat_session and 'thread_id' in chat_session:
       thread_id = chat_session['thread_id']
     else:
-      thread_id = client.beta.threads.create().id
+      # handle timeout
+      thread_id = client.beta.threads.create(timeout=10).id
       logging.info(f'Created a new thread: {thread_id}')
   else:
     logging.info(f'Using existing thread: {thread_id}')
+    
+  # agent_session_data = {
+  #         'agent_id': '9384n9g8=204nrg=0fb9nr0b9',
+  #         'oai_agent_id': 'asst_123abc',
+  #         'file_ids': []
+  #     }
+    
+  # @stream_with_context
+  # def stream_response():
+  #   yield json.dumps({'agent_session': agent_session_data})
+  #   # yield json.dumps({'error': f'An error occurred while communicating with the agent', 'status_code': 400})
+  
+  # return Response(stream_response(), content_type='text/plain', status=200)
     
   return initialize_agent_chat(agent_id=agent_id, thread_id=thread_id, user_input=user_input)
 
@@ -152,8 +168,6 @@ def openai_chat():
 
   Parameters:
       user_input (str): The message to be sent to the OpenAI assistant.
-      agent_id (str): The ID of the agent to use for the conversation.
-      thread_id (str): The ID of the thread to use for the conversation, maintaining context across messages.
 
   Returns:
       JSON response (dict): The chat response from the OpenAI assistant or an error message. The response may include a `switch_agent` field which if populated,
@@ -164,33 +178,43 @@ def openai_chat():
       200 OK: Chat response received successfully.
       400 Bad Request: Invalid request payload or an error occurred.
   """
-  # authorization_key = request.headers.get('Authorization')
-  agent_id = request.json.get('agent_id')
-  thread_id = request.json.get('thread_id')
   user_input = request.json.get('message')
 
-  if not agent_id or not thread_id or not user_input:
-    print(f"Missing required parameters: agent_id={agent_id}, thread_id={thread_id}, user_input={user_input}")
+  if not user_input:
+    print(f"Missing required parameters: user_input={user_input}")
     return jsonify({'error': 'Missing required fields.'}), 400
   
-  # agent_session = get_agent_session()
-  # switch_agent, response = check_switch_agent(chat['success'], 'SWITCH AGENT') # ADD switch_agent_flag to either agent table or module table so admin can change it
-  # if switch_agent:
-  #   logging.info('Switch detected! Agent should swap to its pointer agent.')
-  #   switch_agent = get_switch_agent(agent_session=agent_session)
-  #   if switch_agent is None:
-  #     return jsonify({'error': 'Failed to obtain switch agent'})
-  #   else:
-  #     logging.info(f'Switching to agent {switch_agent['Id']}')
-  #     return initialize_agent_chat(agent_id=switch_agent['Id'], thread_id=thread_id, user_input=user_input)
-    
+  chat_session = get_chat_session()
+  if chat_session is None or 'agent_ids' not in chat_session or 'thread_id' not in chat_session:
+    return jsonify({'error': 'Error resolving chat cookie.'}), 400
+  agent_session = get_agent_session()
+  if agent_session is None or 'oai_agent_id' not in agent_session:
+    return jsonify({'error': 'Failed to resolve agent cookie'}), 400
+  
+  logging.info(f'Current agent session: {agent_session}')
+  logging.info(f'Current chat session: {chat_session}')
+  
   @stream_with_context
   def stream_response():
-    for content in chat_ta(agent_id, thread_id, user_input):
-      yield content
-  # return jsonify({'message': 'Retrieved response', 'response': response, 'switch_agent': switch_agent}), 200
-  return Response(stream_response(), content_type='text/plain', status=200)
-
+    try:
+      for content in chat_ta(assistant_id=agent_session['oai_agent_id'], thread_id=chat_session['thread_id'], user_input=user_input):
+        if isinstance(content, str):
+          yield content
+        elif isinstance(content, dict):
+          yield json.dumps(content)
+    except TimeoutException as e:
+      logging.error(f'Error obtaining response. Operation timed out. {e}')
+      yield json.dumps({'error': 'Operation timed out.', 'status_code': 408})
+    except APIError as e:
+      logging.error(f'Error occurred while processing chat message: {e}')
+      yield json.dumps({'error': f'An error occurred while communicating with the agent. {e}', 'status_code': 400})
+    except Exception as e:
+      logging.error(f'Error occurred while processing chat message: {e}')
+      yield json.dumps({'error': f'An error occurred while communicating with the agent. {e}', 'status_code': 400})
+        
+  response = Response(stream_response(), content_type='text/plain', status=200)
+    
+  return response
 
 @openai_bp.route('/openai/get_models', methods=['GET'])
 def get_models():

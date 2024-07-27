@@ -5,6 +5,7 @@ from routes.agent_routes import agent_bp
 from routes.auth_routes import auth_bp
 from routes.module_routes import module_bp
 from routes.history_routes import history_bp
+from routes.utility_routes import utility_bp
 def register_routes(app):
   """
   Registers the routes for the Flask application.
@@ -13,7 +14,7 @@ def register_routes(app):
       app (Flask): The Flask application instance.
   """
   app.register_blueprint(users_bp)
-  # 
+  app.register_blueprint(utility_bp)
   app.register_blueprint(module_bp)
   app.register_blueprint(history_bp)
   app.register_blueprint(document_bp)

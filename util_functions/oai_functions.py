@@ -1,11 +1,14 @@
 import logging
-from flask import jsonify
+from typing import override
+from flask import jsonify, request
+from openai.lib.streaming._assistants import AssistantEventHandler
 from openai.types.beta.threads.text_content_block import TextContentBlock
+from openai.types.beta.threads.text_delta import TextDelta
 from config import OPENAI_CLIENT as client, chat_session_serializer, agent_session_serializer
 import re
 
 from services.sql_service import get_agent_data
-from util_functions.functions import get_agent_session
+from util_functions.functions import get_agent_session, get_chat_session
 
 class Text:
     def __init__(self, value, annotations=[]):
@@ -56,21 +59,6 @@ def check_switch_agent(response: str, switch_flag: str):
         return True, result
     return False, response
 
-def get_switch_agent(agent_session):
-    """
-    Retrieves current agent_session data and uses the database-stored 'agent_id' to locate its agent pointer, which is returned.
-    """
-    if 'agent_id' in agent_session:
-        agent_id = agent_session['agent_id']
-        get_agent = get_agent_data(agent_id)
-        print(agent_session, get_agent)
-        if 'AgentPointer' in get_agent:
-            get_agent_pointer = get_agent_data(get_agent['AgentPointer'])
-            return get_agent_pointer
-        logging.error(f'Could not find `AgentPointer` field in {get_agent}')
-        return None
-    logging.error(f'Could not find `agent_id` field in {agent_session}')
-    return None
 
  # TODO: Add config option to webapp so admin can change it.
 def wrap_message(message: str, agent_data, config: str='start'):
@@ -192,3 +180,36 @@ def safely_delete_last_messages(thread_id: str, config: int=2):
         return True
     except Exception as e:
         logging.error(f'Unexpected error occured when attempting to remove messages from thread. {e}')
+        
+# class OAIEventHandler(AssistantEventHandler):
+#     @override
+#     def on_event(self, event):
+#       # Retrieve events that are denoted with 'requires_action'
+#       # since these will have our tool_calls
+#       if event.event == 'thread.run.requires_action':
+#         run_id = event.data.id  # Retrieve the run ID from the event data
+#         self.handle_requires_action(event.data, run_id)
+    
+#     def on_text_delta(self, delta: TextDelta, snapshot: Text):
+#         print(delta.value, end="", flush=True)
+ 
+#     def handle_requires_action(self, data, run_id):
+#       tool_outputs = []
+        
+#       for tool in data.required_action.submit_tool_outputs.tool_calls:
+#         if tool.function.name == 'point_to_agent':
+#           tool_outputs.append({"tool_call_id": tool.id, "output": "Switching to new agent."})
+        
+#       # Submit all tool_outputs at the same time
+#       self.submit_tool_outputs(tool_outputs, run_id)
+ 
+#     def submit_tool_outputs(self, tool_outputs, run_id):
+#       # Use the submit_tool_outputs_stream helper
+#       with client.beta.threads.runs.submit_tool_outputs_stream(
+#         thread_id=self.current_run.thread_id,
+#         run_id=self.current_run.id,
+#         tool_outputs=tool_outputs,
+#         event_handler=OAIEventHandler(),
+#       ) as stream:
+#         for text in stream.text_deltas:
+#           print(text, end="", flush=True)

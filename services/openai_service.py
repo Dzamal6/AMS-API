@@ -1,18 +1,19 @@
+import json
 import logging
+import time
 from flask import jsonify
 from flask.helpers import make_response, stream_with_context
 from flask.wrappers import Response
-from openai.types.beta.assistant_stream_event import ThreadMessageDelta
+from openai._exceptions import APIError
+from openai.types.beta.assistant_stream_event import ThreadMessageDelta, ThreadRunRequiresAction, ThreadRunStepDelta
 from openai.types.beta.threads.text_delta_block import TextDeltaBlock
-import tiktoken
 import openai
 from openai import BadRequestError, NotFoundError
-import os
-import json
 from packaging import version
 from config import OPENAI_CLIENT as client, chat_session_serializer, agent_session_serializer
 from time import sleep
-from util_functions.functions import get_agent_session, get_chat_session, get_module_session, get_user_info
+from util_functions.agent_functions import create_agent, switch_agent
+from util_functions.functions import TimeoutException, get_agent_session, get_chat_session, get_module_session, get_user_info, timeout
 from services.sql_service import db_create_chat_session, get_agent_data, update_chat_session
 from util_functions.oai_functions import include_init_message, safely_delete_last_messages, wrap_message
 
@@ -26,7 +27,7 @@ if current_version < required_version:
 else:
   print("OpenAI version is compatible")
 
-
+@timeout(4)
 def chat_ta(assistant_id:str, thread_id:str, user_input:str, initial:bool=False, agent_id:str=None):
   """
   Sends a message to an OpenAI assistant and manages the conversation within a specific thread, counting the tokens used.
@@ -58,14 +59,7 @@ def chat_ta(assistant_id:str, thread_id:str, user_input:str, initial:bool=False,
       >>> print(response)
       {'error': 'missing thread_id'}
   """
-  # Token Counting Input
-  # encoding = tiktoken.get_encoding("cl100k_base")
-  # encoding = tiktoken.encoding_for_model("gpt-4")
-  
-  # inp_tokens = len(encoding.encode(user_input))
-  # inp_cost_tok = (0.01 / 1000) * inp_tokens
-  # print(
-  #     f"Number of tokens input: {inp_tokens}\nCost of tokens: {inp_cost_tok}")
+  # time.sleep(10)
   
   if not thread_id:
     print('Error: Missing thread_id')
@@ -74,6 +68,7 @@ def chat_ta(assistant_id:str, thread_id:str, user_input:str, initial:bool=False,
   print(f"Received message: '{user_input}' for thread ID: {thread_id}")
   
   wrapper = user_input
+  agent_session = get_agent_session()
   if initial:
     if not agent_id:
       raise NotFoundError(f'Missing agent_id!')
@@ -87,119 +82,55 @@ def chat_ta(assistant_id:str, thread_id:str, user_input:str, initial:bool=False,
       wrapper = initial_input
       logging.info(f'Wrapping message: {wrapper}')
   else:
-    agent_session = get_agent_session()
     if not agent_session or 'agent_id' not in agent_session:
       logging.warning(f'Could not resolve agent_session cookie. Failed to alter message...')
     else:
-      agent_data = get_agent_data(agentId=agent_session['agent_id'])
+      agent_data = get_agent_data(agentId=agent_session['agent_id']) # put this into cookies so it doesn't slow down the chat
       wrapper = wrap_message(wrapper, agent_data=agent_data, config='start')
       logging.info(f'Wrapping message: {wrapper}')
   
   client.beta.threads.messages.create(thread_id=thread_id,
                                       role="user",
                                       content=wrapper)
-  stream = client.beta.threads.runs.create(thread_id=thread_id,
-                                        assistant_id=assistant_id, stream=True)
   
+  stream = client.beta.threads.runs.create(thread_id=thread_id, timeout=55,
+                                        assistant_id=assistant_id, stream=True, additional_instructions='Do not use the function unless the user tells you to. Also do not create any additional functions.')
   for event in stream:  
+    # print(event)
     if isinstance(event, ThreadMessageDelta):
       if isinstance(event.data.delta.content[0], TextDeltaBlock):
         yield event.data.delta.content[0].text.value
       sleep(0.05)
-        
-  # start_time = time.time()
-  # while True:
-  #   run = client.beta.threads.runs.retrieve(thread_id=thread_id,
-  #                                                  run_id=run.id)
-  
-  #   if run.status == "completed":
-  #     logging.info(f'Prompt tokens used: {run.usage.prompt_tokens}, Completion tokens used: {run.usage.completion_tokens}')
-  #     # if initial: --> This placement is better for ensuring the messages are only deleted if the chat is completed, but the response will have context of the deleted messages.
-  #     #   safely_delete_last_messages(thread_id=thread_id)
-  #     yield run.
-  #     break
-  #   if run.status not in ['completed', 'queued', 'in_progress']:
-  #     logging.error(f'Run status failed with status: {run.status}')
-  #     logging.info(f'Prompt tokens used: {run.usage.prompt_tokens}')
-  #     return {'error': f'Run failed with status: {run.status}'}
-  
-  #   if time.time() - start_time > 55:
-  #     print("Timeout reached")
-  #     return {'error': 'timeout'}
-  
-  # messages = client.beta.threads.messages.list(thread_id=thread_id)
-  # response = messages.data[0].content[0].text.value
-  
-  # print(f"Assistant Response: {response}")
-  
-  # return {'success': response}
-
-
-def create_agent(agent_id):
-  """
-  Creates a new agent on the OpenAI server or retrieves details of an existing agent based on the provided ID.
-
-  Parameters:
-      agent_id (str): The unique identifier for the agent, used to store or retrieve the agent's data locally.
-
-  Returns:
-      [str, list] or None: The unique identifier of the created or retrieved agent, or None if creation failed.
-
-  Raises:
-      OSError: If necessary directories or files cannot be created.
-      IOError: If there's an error in reading from or writing to the local JSON file.
-      ApiError: If there's an issue with the OpenAI client during agent creation or file upload.
-
-  Notes:
-      - Uses `client.beta.assistants.create` to create an agent with properties like name and instructions.
-      - Manages file uploads via `client.files.create` and stores agent details locally in `/tmp/agents/{agent_id}.json`.
-      - Ensures the `/tmp/agents` directory exists for storing agent data.
-
-  Example:
-      >>> agent_id = create_agent('1234')
-      >>> print(agent_id)
-      'unique-agent-id'
-  """
-
-  agent_data = get_agent_data(agent_id)
-  file_ids = []
-  if not agent_data or agent_data is None:
-    return None
-  
-  agent_session = get_agent_session()
-
-  if agent_session is not None and agent_session.get('oai_agent_id') == agent_data['Id']:
-    oai_agent_id = str(agent_session['agent_id'])
-    print("Loaded existing assistant ID")
-  else:
-    if len(agent_data['Documents_IO']) > 0:
-      files = agent_data['Documents_IO']
-      file_ids = []
-      for file in files:
-        file_object = (file['name'], file['bytes'])
-        upload_file = client.files.create(file=file_object, purpose='assistants')
-        file_ids.append(upload_file.id)
-
-      try: 
-        agent = client.beta.assistants.create(name=agent_data['Name'],
-          instructions=agent_data['Instructions'],
-          model=agent_data['Model'],
-          tools=[{
-            "type": "file_search"
-          }],
-          tool_resources={"file_search": {"vector_stores": [{"file_ids": file_ids}]}},
-         )
-      except BadRequestError as e:
-        print(f"Error: {e}")
-        return None
-    else:
-      agent = client.beta.assistants.create(name=agent_data['Name'],
-                                              instructions=agent_data['Instructions'],
-                                              model=agent_data['Model']
-                                             )
-    oai_agent_id = agent.id
-
-  return oai_agent_id, file_ids
+    if isinstance(event, ThreadRunStepDelta):
+      if event.data.delta.step_details.tool_calls[0].function is not None and event.data.delta.step_details.tool_calls[0].function.name is not None:
+        yield json.dumps({'action': 'function_call', 'function_name': event.data.delta.step_details.tool_calls[0].function.name, 'status': 'in_progress'})
+        sleep(0.5)
+          
+    if isinstance(event, ThreadRunRequiresAction):
+      tool_calls = event.data.required_action.submit_tool_outputs.tool_calls
+      tool_outputs = []
+      for tool_call in tool_calls:
+        print(f'Calling {tool_call.function.name}')
+        if tool_call.function.name == 'point_to_agent':
+          result = switch_agent(agent_session=agent_session)
+          if isinstance(result, tuple):
+            result, cookies = result  
+            print(f'output: {result if result else 'Cannot switch agents!'}')
+            print(f'output cookies: {cookies}')
+            tool_outputs.append({'tool_call_id': tool_call.id, 'output': result})
+            if cookies:
+              yield json.dumps({'action': 'function_call', 'function_name': tool_call.function.name, 'status': 'completed'})
+              sleep(0.5)
+              yield cookies
+          else:
+            tool_outputs.append({'tool_call_id': tool_call.id, 'output': result})
+            yield json.dumps({'action': 'function_call', 'function_name': tool_call.function.name, 'status': 'failed'})
+        else:
+          tool_outputs.append({'tool_call_id': tool_call.id, 'output': 'Function does not exist.'})
+      with client.beta.threads.runs.submit_tool_outputs_stream(thread_id=thread_id, run_id=event.data.id, tool_outputs=tool_outputs) as stream_output:
+        for text in stream_output.text_deltas:
+          yield text
+          sleep(0.05)
 
 def delete_agent(agent_id: str):
   """
@@ -306,19 +237,20 @@ def initialize_agent_chat(agent_id: str, thread_id: str, user_input: str):
   
   @stream_with_context
   def stream_response():
-    for content in chat_ta(new_oai_agent_id, thread_id, user_input=user_input, initial=True, agent_id=agent_id):
-      yield content
-  # print(f'ASSISTANT RESPONSE: {chat}')
-
-  # if 'error' in chat:
-  #   print(f"Error: {chat['error']}")
-  #   return jsonify({'error': chat['error']}), 400
-    
-  # response = make_response(jsonify({'message': 'Created new agent and set its cookie.', 'thread_id': thread_id, 'agent_id': new_oai_agent_id}, chat), 200)
+    try:
+      for content in chat_ta(assistant_id=new_oai_agent_id, thread_id=thread_id, user_input=user_input, initial=True, agent_id=agent_id):
+        yield content
+    except TimeoutException as e:
+      logging.error(f'Error obtaining response. Operation timed out. {e}')
+      yield json.dumps({'error': 'Operation timed out.', 'status_code': 408})
+    except APIError as e:
+      logging.error(f'Error occurred while processing chat message: {e}')
+      yield json.dumps({'error': f'An error occurred while communicating with the agent. {e}', 'status_code': 400})
+    except Exception as e:
+      logging.error(f'Error occurred while processing chat message: {e}')
+      yield json.dumps({'error': f'An error occurred while communicating with the agent. {e}', 'status_code': 400})
+  
   response = Response(stream_response(), content_type='text/plain', status=200)
-  response.headers.add('Access-Control-Expose-Headers', 'X-Thread-ID, X-Agent-ID')
-  response.headers.add('X-Thread-ID', thread_id)
-  response.headers.add('X-Agent-ID', agent_id)
   response.set_cookie('chat_session',
                       session_data,
                       httponly=True,
