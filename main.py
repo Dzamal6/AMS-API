@@ -5,7 +5,7 @@ from flask_cors import CORS
 import config
 from routes import routes
 from services.session_service import check_session_validation
-from database.database import engine, seed_data, upload_documents
+from database.database import engine, seed_buckets, seed_data, upload_documents
 from database.base import Base
 import database.models
 import logging
@@ -27,6 +27,7 @@ logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=lo
 
 # Base.metadata.create_all(engine)
 # seed_data()
+# seed_buckets()
 # upload_documents()
 
 app.before_request(check_session_validation)

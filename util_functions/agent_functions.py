@@ -4,6 +4,7 @@ from flask import request, g, current_app
 from openai._exceptions import BadRequestError
 from services.sql_service import get_agent_data
 from config import OPENAI_CLIENT as client, chat_session_serializer, agent_session_serializer
+from services.storage_service import serve_file
 from util_functions.functions import get_agent_session, get_chat_session
 
 
@@ -83,11 +84,15 @@ def create_agent(agent_id):
     print("Loaded existing assistant ID")
   # Check for existing agent in OpenAI (Introduce existing_agent_id to agent table?)
   else:
-    if len(agent_data['Documents_IO']) > 0:
-      files = agent_data['Documents_IO']
+    if len(agent_data['Documents']) > 0:
+      files = agent_data['Documents']
+      
       file_ids = []
       for file in files:
-        file_object = (file['name'], file['bytes'])
+        file_bytes = serve_file(file['URL'])
+        if not file_bytes:
+          return None
+        file_object = (file['Name'], file_bytes)
         upload_file = client.files.create(file=file_object, purpose='assistants')
         file_ids.append(upload_file.id)
 
@@ -108,7 +113,7 @@ def create_agent(agent_id):
                                               instructions=agent_data['Instructions'],
                                               model=agent_data['Model']
                                              )
-    if 'AgentPointer' in agent_data and agent_data['AgentPointer'] is not None:
+    if 'AgentPointer' in agent_data and agent_data['AgentPointer'] is not None and agent_data['AgentPointer'] != 'None':
       agent = client.beta.assistants.update(assistant_id=agent.id, tools=[{
         'type': 'function',
         'function': {

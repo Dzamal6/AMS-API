@@ -4,7 +4,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import NullPool 
-from config import POSTGRES_CONNECTION_STRING
+from config import POSTGRES_CONNECTION_STRING, SB_CLIENT
 from database.base import Base
 from database.models import ChatSession, User, Role, Document
 from util_functions.functions import hash_password
@@ -15,7 +15,7 @@ import hashlib
 from werkzeug.utils import secure_filename
 from apscheduler.schedulers.blocking import BlockingScheduler
 
-engine = create_engine(POSTGRES_CONNECTION_STRING, pool_size=4, max_overflow=0, pool_recycle=60) # set echp=True for elaborate logging
+engine = create_engine(POSTGRES_CONNECTION_STRING, pool_size=15, max_overflow=0, pool_recycle=60) # set echo=True for elaborate logging
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base.metadata.bind = engine
 
@@ -91,6 +91,29 @@ def seed_data():
         session.commit()
   except Exception as e:
     print(f"An error occurred during seeding: {e}")
+    
+def seed_buckets():
+  """
+  Creates default buckets in supabase storage for correctly storing and handling files.
+  
+  Details:
+  - Creates buckets for 'images', 'documents', and 'audio'.
+  
+  Note:
+  - Should be called once at the initial start of the application, best be called with `seed_data()`
+  """
+  buckets = ['images', 'documents', 'audio']
+  try:
+    responses = []
+    for bucket in buckets:
+      response = SB_CLIENT.storage.create_bucket(bucket)
+      responses.append(response)
+      logging.info(f'Created bucket {bucket}: {response}')
+    logging.info(f'Seeded buckets. {responses}')
+  except Exception as e:
+    logging.error(f'Failed to seed buckets! {e} - Responses: {responses}')
+    for response in responses:
+      logging.error(f'Response details: {response}')
 
 def upload_documents():
   """

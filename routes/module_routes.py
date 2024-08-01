@@ -1,8 +1,9 @@
 from flask import Blueprint, request, jsonify, make_response, current_app
 import requests
 from services.openai_service import safely_end_chat_session
+from services.storage_service import delete_files
 from util_functions.functions import check_module_permission, check_user_modules, decrypt_token, encrypt_token, get_agent_session, get_chat_session, get_module_session, roles_required, get_user_info, check_user_projects, check_admin
-from services.sql_service import create_new_module, delete_module, get_all_modules, get_module_by_id, update_module, upload_agent_metadata
+from services.sql_service import create_new_module, delete_module, get_all_files, get_all_modules, get_module_by_id, update_module, upload_agent_metadata
 from config import FERNET_KEY, module_session_serializer
 
 module_bp = Blueprint('module', __name__)
@@ -65,7 +66,7 @@ def set_module():
 @module_bp.route('/modules', methods=['GET'])
 def get_modules_route():
     """
-    Retrieves a list of all the modules that the user has access to from the database.
+    Retrieves a list of all the modules that the currently logged in user has access to from the database.
 
     URL:
     - GET /modules
@@ -191,11 +192,21 @@ def delete_module_route():
       Requires the `Admin` role for deleting assistants.
   """
   module_id = request.json.get('module_id')
+  files = get_all_files(module_id=module_id)
   delete = delete_module(module_id)
-  if delete:
-    return jsonify({'message': 'Module deleted from the database.'}), 200
-  else:
-    return jsonify({'message': 'Could not delete module.'}), 400
+  if not delete:
+      return jsonify({'message': 'Could not delete module.'}), 400
+  if files:
+      file_keys = []
+      for file in files:
+          file_keys.append(file['URL'])
+      deleted, status = delete_files(file_keys)
+      if status == False and not deleted:
+          return jsonify({'message': 'Module deleted from the database but all related files failed to be removed.'}), 400
+      if status == False:
+          return jsonify({'message': 'Module deleted from the database but some related files failed to be removed.', 'files': deleted}), 400
+  return jsonify({'message': 'Module deleted from the database.'}), 200
+  
 
 @module_bp.route('/modules', methods=['PATCH'])
 @roles_required('admin')

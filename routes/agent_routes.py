@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify
 from config import OPENAI_CLIENT as client
-from services.sql_service import get_director_agent_info, upload_agent_metadata, retrieve_all_agents, delete_agent, update_agent, upload_files
+from services.sql_service import get_agent_data, get_director_agent_info, upload_agent_metadata, retrieve_all_agents, delete_agent, update_agent, upload_files_metadata
+from services.storage_service import delete_files, upload_file
 from util_functions.functions import get_module_session
 
 
@@ -45,28 +46,26 @@ def create_agent():
   model = request.form.get('model')
   module_session = get_module_session()
 
-  print(files)
-
   if module_session is None or not module_session:
     return jsonify({'error': 'Invalid module session.'}), 401
   if not name or not description or not instructions or not model:
     return jsonify({'error': 'Missing required fields.'}), 400
     
   module_id = str(module_session['Id'])
-  
-  # if not file_ids:
   file_ids = []
+  uploaded_files = []
   
   if files:
-    module_ids = []
-    module_ids.append(module_id)
-    uploaded_files = upload_files(files, module_ids)
-    print(uploaded_files)
-  
-    for status, response in uploaded_files:
-      if status == 'success' and response['Id'] not in file_ids:
-        file_ids.append(response['Id'])
-        
+    sb_uploaded_files = []
+    for file in files:
+      response = upload_file(bucket_name='documents', file_storage=file, folder='uploads', module_id=module_id)
+      sb_uploaded_files.append(response)
+    uploaded_files = upload_files_metadata(sb_uploaded_files, module_id)
+    if uploaded_files:
+      for file in uploaded_files:
+        if 'Id' in file:
+          file_ids.append(file['Id'])
+    
   agent_details = {
     "name": name,
     "system_prompt": instructions,
@@ -80,6 +79,13 @@ def create_agent():
 
   if upload is None:
     return jsonify({'error': 'An error occurred while uploading the agent.'}), 400
+  
+  if uploaded_files:
+     return jsonify({
+      "message": "Agent added to the database.",
+      "data": upload,
+      "files": uploaded_files
+    }), 200
 
   return jsonify({
       "message": "Agent added to the database.",
@@ -141,6 +147,13 @@ def delete_agent_route():
   agent_id = request.json.get('agent_id')
   if not agent_id:
     return jsonify({'error': 'Missing required field: agent_id'}), 400
+  
+  # agent = get_agent_data(agent_id)
+  # if 'Documents' in agent:
+  #   file_keys = []
+  #   for file in agent['Documents']:
+  #     file_keys.append(file['URL'])
+  #   delete_files(file_keys=file_keys)
 
   deleted_agent_id = delete_agent(agent_id)
   if deleted_agent_id is None:
@@ -201,22 +214,34 @@ def update_agent_route():
   print(f'Received file ids: {[f"{file_id}" for file_id in file_ids]}')
   if not file_ids:
     file_ids = []
+    
+  uploaded_files = []
 
-  if files and files is not []:
-    module_ids = []
-    module_ids.append(module_id)
-    uploaded_files = upload_files(files, module_ids=module_ids)
-    print(f'UPLOADED FILES: {uploaded_files}')
-
-    for status, response in uploaded_files:
-      if status == 'success' and response['Id'] not in file_ids:
-        file_ids.append(response['Id'])
-    print(f'Updating agent with files: {[f"{file_id}" for file_id in file_ids]}')
+# this and delete. Then implement choosing from existing files when adding new agents.
+# Also implement checks for existing and ignore files that exist, just link them to agents.
+  if files:
+    sb_uploaded_files = []
+    for file in files:
+      response = upload_file(bucket_name='documents', file_storage=file, folder='uploads', module_id=module_id)
+      sb_uploaded_files.append(response)
+    uploaded_files = upload_files_metadata(sb_uploaded_files, module_id)
+    if uploaded_files:
+      for file in uploaded_files:
+        if 'Id' in file:
+          file_ids.append(file['Id'])
+      print(f'Updating agent with files: {[f"{file_id}" for file_id in file_ids]}')
     
   update = update_agent(agent_id, name, description, instructions, wrapper_prompt, initial_prompt, agent_pointer, model, file_ids)
 
   if update is None:
     return jsonify({'error': 'An error occurred while updating the agent.'}), 400
+  
+  if uploaded_files:
+     return jsonify({
+      "message": "Agent updated successfully.",
+      "agent": update,
+      "files": uploaded_files
+    }), 200
 
   return jsonify({'message': 'Agent updated successfully.', 'agent': update}), 200
 

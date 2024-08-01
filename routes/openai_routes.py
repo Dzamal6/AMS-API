@@ -105,19 +105,6 @@ def initialize_chat():
   else:
     logging.info(f'Using existing thread: {thread_id}')
     
-  # agent_session_data = {
-  #         'agent_id': '9384n9g8=204nrg=0fb9nr0b9',
-  #         'oai_agent_id': 'asst_123abc',
-  #         'file_ids': []
-  #     }
-    
-  # @stream_with_context
-  # def stream_response():
-  #   yield json.dumps({'agent_session': agent_session_data})
-  #   # yield json.dumps({'error': f'An error occurred while communicating with the agent', 'status_code': 400})
-  
-  # return Response(stream_response(), content_type='text/plain', status=200)
-    
   return initialize_agent_chat(agent_id=agent_id, thread_id=thread_id, user_input=user_input)
 
 
@@ -402,6 +389,8 @@ def create_summary_route():
   
   if not module_id or not thread_id:
     return jsonify({'error': 'Missing required fields.'}), 400
+  if module_id == 'None' or thread_id == 'None':
+    return jsonify({'error': 'Cannot create summary!'}), 400
   
   try:
     summary_agent = get_summarizer_agent(module_id)

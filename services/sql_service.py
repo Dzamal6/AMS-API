@@ -674,19 +674,71 @@ def upload_files(files, module_ids: list[str]=None):
           
         session.add(document)
         session.commit()
-        responses.append(('success', {
-            "Id": document.id,
+        responses.append({'success': {
+            "Id": str(document.id),
             "Name": document.name,
             "Content_hash": document.content_hash,
             "Created": document.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
             "LastModified": document.last_modified.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
-        }))
+        }})
 
   except Exception as e:
       print(f"An error occurred: {e}")
-      responses.append(('error', {'error': f'An error occurred during upload. {str(e)}'}))
+      responses.append({'error': f'An error occurred during upload. {str(e)}'})
 
   return responses
+
+# FILES METADATA
+def upload_files_metadata(files, module_id: str):
+  """
+  Uploads files metadata to the database.
+  
+  Parameters:
+  - files (dict[str, str]): The data to upload. Should consist of `Name`, `URL`, and `FileType`.
+  - module_id (str): The ID of the module these files are tied to.
+  
+  Returns:
+  - list (list[dict[str, str | any]]): A list of the metadata of uploaded files. An error message for each failed file.
+  """
+  with session_scope() as session:
+    responses = []
+    for file in files:
+      existing_file = session.query(Document).filter(Document.url == file['URL']).first()
+      if existing_file:
+        responses.append({
+          "Id": str(existing_file.id),
+          "Name": existing_file.name,
+          'URL': existing_file.url,
+          'FileType': existing_file.fileType,
+          "Created": existing_file.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
+          "LastModified": existing_file.last_modified.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
+        })
+        logging.info(f'Found existing file for {file['URL']}.')
+        continue
+      try:
+        file_metadata = Document(id=uuid.uuid4(), name=file['Name'], url=file['URL'], fileType=file['FileType'])
+        module = session.query(Module).filter(Module.id == module_id).first()
+        modules = []
+        file_modules = file_metadata.modules
+        modules.extend(file_modules)
+        modules.append(module)
+        file_metadata.modules = modules
+        
+        session.add(file_metadata)
+        session.commit()
+        responses.append({
+          "Id": str(file_metadata.id),
+          "Name": file_metadata.name,
+          'URL': file_metadata.url,
+          'FileType': file_metadata.fileType,
+          "Created": file_metadata.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
+          "LastModified": file_metadata.last_modified.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
+        })
+      except Exception as e:
+        logging.error(f"An error occurred saving file metadata: {e}")
+        responses.append({'error': f'An error occurred during upload. {str(e)}'})
+        continue
+    return responses
 
 
 def get_all_files(module_id: str):
@@ -707,6 +759,8 @@ def get_all_files(module_id: str):
           str(doc.id),
           "Name":
           doc.name,
+          "URL": doc.url,
+          "FileType": doc.fileType,
           "Created":
           doc.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
           "LastModified":
@@ -732,9 +786,10 @@ def delete_doc(docId, module_id: str):
   try:
     with session_scope() as session:
       document = session.query(Document).filter_by(id=docId).first()
+      file_key = document.url
       if not document:
         print(f"Document with ID {docId} not found")
-        return None
+        return None, None
 
       if len(document.modules) > 1:
         assoc_query = session.query(document_module_table).filter(
@@ -752,10 +807,10 @@ def delete_doc(docId, module_id: str):
         session.delete(document)
         session.commit()
         print(f"Deleted document with ID {docId}")
-        return docId
+        return docId, file_key
   except Exception as e:
     print(f"An error occurred: {e}")
-    return None
+    return None, None
 
 
 def get_file(docId):
@@ -830,12 +885,7 @@ def get_agent_data(agentId):
       agent = session.query(Agent).filter_by(id=agentId).first()
       if not agent:
         return None
-
-      docs = []
-      for file in agent.documents:
-        content_bytes = cast(bytes, file.content)
-        docs.append({'name': file.name, 'bytes': io.BytesIO(content_bytes)})
-
+      
       agent_dict = {
         "Id": str(agent.id),
         "Name": agent.name,
@@ -847,8 +897,7 @@ def get_agent_data(agentId):
         "AgentPointer": str(agent.agent_id_pointer),
         "Director": agent.director,
         "PromptChaining": agent.prompt_chaining,
-        "Documents": [{"Id": str(doc.id), "Name": doc.name} for doc in agent.documents],
-        "Documents_IO": docs,
+        "Documents": [{"Id": str(doc.id), "Name": doc.name, 'URL': doc.url} for doc in agent.documents],
         "Created": agent.created.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3],
         "LastModified": agent.last_modified.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
       }
@@ -958,6 +1007,7 @@ def retrieve_all_agents(module_id: str):
 def delete_agent(agent_id):
   """
   Deletes a specific agent from the database based on the agent's ID.
+  If any other agents pointed to this one, the pointers are removed.
 
   Parameters:
       agent_id (str): The unique identifier of the agent to be deleted.
@@ -970,9 +1020,14 @@ def delete_agent(agent_id):
       # obtain agent from db and delete associated files before deleting it
       result = session.query(Agent).filter_by(id=agent_id).first()
       if result:
+        result_id = result.id
         session.delete(result)
         session.commit()
-        print(f"Deleted agent with ID {agent_id}")
+        logging.info(f"Deleted agent with ID {agent_id}")
+        tied_agents = session.query(Agent).filter(Agent.agent_id_pointer == result_id).all()
+        for agent in tied_agents:
+          agent.agent_id_pointer = None
+        logging.info(f'Deleted agent pointer associations.')
         return agent_id
       else:
         print(f"Agent with ID {agent_id} not found")
@@ -1217,11 +1272,21 @@ def retrieve_chat_sessions(user_id: str):
   try:
     with session_scope() as session:
       chat_sessions = session.query(ChatSession).filter(ChatSession.userID == uuid.UUID(user_id)).all()
+      module_ids = [str(chat_session.moduleID) for chat_session in chat_sessions if chat_session.moduleID]
+
+      modules = session.query(Module).filter(Module.id.in_(module_ids)).all()
+      module_dict = {str(module.id): module.name for module in modules}
+
+      def get_module_name(module_name: str, module_id: str=None):
+        if module_id:
+          return module_dict.get(module_id, module_name)
+        return module_name
+
       return [{
         "Id": str(chat_session.id),
         'UserName': chat_session.user.email,
         'LastAgent': str(chat_session.last_agent),
-        'ModuleName': chat_session.module_name,
+        'ModuleName': get_module_name(chat_session.module_name, str(chat_session.moduleID) if chat_session.moduleID else None),
         'ModuleID': str(chat_session.moduleID),
         'Analytics': chat_session.convo_analytics,
         'Summaries': chat_session.summaries,
@@ -1238,6 +1303,7 @@ def retrieve_chat_sessions(user_id: str):
   except Exception as e:
     logging.error(f"An error occurred while retrieving chat sessions for user {user_id}. {e}")
     return None
+
   
 def delete_chat_session(chat_id: str):
   """

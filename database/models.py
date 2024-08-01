@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Table, LargeBinary, Boolean, event
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Table, LargeBinary, Boolean, event, Text
 from sqlalchemy.orm import relationship, backref
 from database.base import Base
 from datetime import datetime
@@ -133,9 +133,10 @@ event.listen(ChatSession, 'before_update', set_last_modified)
 class Document(Base):
   __tablename__ = "documents"
   id = Column(UUID(as_uuid=True), primary_key=True, index=True)
-  name = Column(String)
-  content = Column(LargeBinary)
-  content_hash = Column(String(64), unique=True)
+  name = Column(String, index=True)
+  url = Column(Text) 
+  size = Column(Integer)
+  fileType = Column(Text)
   agents = relationship("Agent",
                         secondary='agent_file',
                         back_populates='documents')

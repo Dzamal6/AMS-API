@@ -1,4 +1,6 @@
 import logging
+import string
+import unicodedata
 import uuid
 from cryptography.fernet import Fernet
 from datetime import datetime, timedelta
@@ -448,3 +450,50 @@ def timeout(seconds):
 
       return wrapper
   return decorator
+
+def normalize_file_name(file_name: str) -> str:
+    """
+    Normalizes a file name to make it usable and safe across various services.
+
+    Parameters:
+    - file_name (str): The original file name.
+
+    Returns:
+    - str: The normalized file name.
+    """
+    # Normalize unicode characters
+    normalized_name = unicodedata.normalize('NFKD', file_name)
+    
+    # Encode to ASCII bytes, ignore errors, and decode back to string
+    normalized_name = normalized_name.encode('ascii', 'ignore').decode('ascii')
+    
+    # Replace spaces with underscores
+    normalized_name = re.sub(r'\s+', '_', normalized_name)
+    
+    # Remove invalid characters
+    normalized_name = re.sub(r'[^a-zA-Z0-9._-]', '', normalized_name)
+    
+    # Ensure the name isn't empty after cleaning
+    if not normalized_name:
+        raise ValueError("File name cannot be normalized to an empty string.")
+    
+    # Truncate to a safe length (e.g., 255 characters)
+    max_length = 255
+    if len(normalized_name) > max_length:
+        # Keep the extension and truncate the base name if necessary
+        base_name, ext = re.match(r'(.+?)(\.[^.]*$|$)', normalized_name).groups()
+        normalized_name = base_name[:max_length - len(ext)] + ext
+    
+    # Ensure the file name does not start or end with a dot or dash
+    normalized_name = normalized_name.strip('.-')
+    
+    # Handle reserved names (example: on Windows)
+    reserved_names = {
+        'CON', 'PRN', 'AUX', 'NUL',
+        'COM1', 'COM2', 'COM3', 'COM4', 'COM5', 'COM6', 'COM7', 'COM8', 'COM9',
+        'LPT1', 'LPT2', 'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9'
+    }
+    if normalized_name.upper() in reserved_names:
+        normalized_name = f"{normalized_name}_file"
+    
+    return normalized_name

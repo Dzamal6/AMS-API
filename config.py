@@ -4,6 +4,7 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from openai import OpenAI
 from dotenv import load_dotenv
+from supabase import create_client, Client
 
 load_dotenv()
 
@@ -50,3 +51,8 @@ GOOGLE_CLIENT_SECRET = os.environ['GOOGLE_CLIENT_SECRET']
 SUPABASE_STORAGE_URL=os.environ['SUPABASE_STORAGE_URL']
 SUPABASE_ACCESS_KEY_ID=os.environ['SUPABASE_ACCESS_KEY_ID']
 SUPABASE_S3_ACCESS_KEY=os.environ['SUPABASE_S3_ACCESS_KEY']
+SUPABASE_API_KEY=os.environ['SUPABASE_API_KEY']
+SUPABASE_SERVICE_ROLE_KEY=os.environ['SUPABASE_SERVICE_ROLE_KEY'] # DANGEROUS
+
+# Initialize Supabase client
+SB_CLIENT: Client = create_client(SUPABASE_STORAGE_URL, SUPABASE_SERVICE_ROLE_KEY) # SHOULD BE REPLACED WITH SPABASE_S3 OR SUPABASE_API_KEY AFTER RESOLVING SUPABASE AUTH/POLICIES
