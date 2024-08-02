@@ -5,7 +5,7 @@ from sqlalchemy.exc import SQLAlchemyError, NoResultFound
 import uuid
 from flask import jsonify
 from datetime import datetime
-from util_functions.sql_functions import associate_modules, check_for_duplicate, compute_file_hash, create_default_agents, get_doc_content, get_module, get_modules_as_dicts, get_roles_as_dicts, get_user_name
+from util_functions.sql_functions import associate_modules, check_for_duplicate, compute_file_hash, create_default_agents, get_doc_content, get_module, get_modules_as_dicts, get_roles_as_dicts, get_user_name, update_default_agents
 from util_functions.functions import hash_password, is_email
 from werkzeug.utils import secure_filename
 import os
@@ -186,6 +186,9 @@ def update_module(
       if summaries is not None and summaries != module.summaries:
         module.summaries = summaries
         updated_fields.append('summaries')
+      
+      update_default_agents(module_id=str(module.id), session=session, analytics=convo_analytics, summaries=summaries)
+
       
       if updated_fields:
         session.commit()
@@ -1275,21 +1278,33 @@ def retrieve_chat_sessions(user_id: str):
       module_ids = [str(chat_session.moduleID) for chat_session in chat_sessions if chat_session.moduleID]
 
       modules = session.query(Module).filter(Module.id.in_(module_ids)).all()
-      module_dict = {str(module.id): module.name for module in modules}
+      modules_info = {str(module.id): {'Name': module.name, 'Analytics': module.convo_analytics, 'Summaries': module.summaries} for module in modules}
 
-      def get_module_name(module_name: str, module_id: str=None):
-        if module_id:
-          return module_dict.get(module_id, module_name)
+      def get_module_name(module_name: str, module_id: str = None):
+        if module_id and module_id in modules_info:
+          return modules_info[module_id]['Name']
         return module_name
+      
+      def get_module_analytics(module_analytics: bool, module_id: str = None):
+        if module_id and module_id in modules_info:
+          return modules_info[module_id]['Analytics']
+        return module_analytics
+      
+      def get_module_summaries(module_summaries: bool, module_id: str =None):
+        if module_id and module_id in modules_info:
+          return modules_info[module_id]['Summaries']
+        return module_summaries
 
+# MODULE NAME SHOULD BE UPDATED HERE WHEN UPDATING THE MODULE. CURRENT APPROACH WON'T SOLVE IF THE MODULE IS DELETED --> WHEN MODULE IS DELETED, THE
+# NAME THAT THE CHAT SESSION HAD PRIOR TO THE MODULE UPDATE WILL BE DISPLAYED.
       return [{
         "Id": str(chat_session.id),
         'UserName': chat_session.user.email,
         'LastAgent': str(chat_session.last_agent),
         'ModuleName': get_module_name(chat_session.module_name, str(chat_session.moduleID) if chat_session.moduleID else None),
-        'ModuleID': str(chat_session.moduleID),
-        'Analytics': chat_session.convo_analytics,
-        'Summaries': chat_session.summaries,
+        'ModuleID': str(chat_session.moduleID) if chat_session.moduleID else None,
+        'Analytics': get_module_analytics(chat_session.convo_analytics, str(chat_session.moduleID) if chat_session.moduleID else None),
+        'Summaries': get_module_summaries(chat_session.summaries, str(chat_session.moduleID) if chat_session.moduleID else None),
         'Analysis': chat_session.analysis,
         'Summary': chat_session.summary,
         'MessagesLen': chat_session.messages_len,

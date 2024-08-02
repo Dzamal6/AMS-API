@@ -122,6 +122,11 @@ def strip_message(modified_message: str, flag: str) -> str:
 
     Returns:
         str: The extracted user message content.
+        
+    Usage:
+    >>> modified_message = f"\ninstructions:\n{init}\n-----\nuser_message:\n{message}"
+    >>> stripped_message = strip_message(modified_message)
+    {message}
     """
     instructions_marker = 'instructions:'
     user_message_marker = 'user_message:'
@@ -160,7 +165,7 @@ def strip_message(modified_message: str, flag: str) -> str:
 def safely_delete_last_messages(thread_id: str, config: int=2):
     """
     Safely deletes the last messages from the thread. If the thread is not found, returns None and does nothing. 
-    None is also returned if there are two or less messages.
+    None is also returned if there are less messages than set in `config`.
     
     Parameters:
         thread_id (str): The ID of the thread the conversation is being held on.
@@ -171,7 +176,7 @@ def safely_delete_last_messages(thread_id: str, config: int=2):
     """
     try:
         messages = client.beta.threads.messages.list(thread_id=thread_id)
-        if not messages or len(messages.data) <= 2:
+        if not messages or len(messages.data) <= config:
             return None
         for i in range(config):
             deleted = client.beta.threads.messages.delete(message_id=messages.data[i].id, thread_id=thread_id).deleted
