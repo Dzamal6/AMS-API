@@ -2,6 +2,7 @@ import logging
 from typing import override
 from flask import jsonify, request
 from openai.lib.streaming._assistants import AssistantEventHandler
+from openai.types.beta.threads.file_citation_annotation import FileCitationAnnotation
 from openai.types.beta.threads.text_content_block import TextContentBlock
 from openai.types.beta.threads.text_delta import TextDelta
 from config import OPENAI_CLIENT as client, chat_session_serializer, agent_session_serializer
@@ -25,15 +26,15 @@ class MessageContent:
         self.type = type
         self.text = text
 
-def convert_content(content_list, flag='SWITCH AGENT'):
+def convert_content(content_list):
     converted_content = []
     for content in content_list:
         converted_content.append({
             'Type': content.type,
             'Text': {
                 'Text': {
-                    'value': strip_message(content.text.value, flag),
-                    'annotations': content.text.annotations
+                    'value': strip_message(content.text.value),
+                    'annotations': convert_annotations(content.text.annotations)
                 }
             }
         })
@@ -41,6 +42,22 @@ def convert_content(content_list, flag='SWITCH AGENT'):
 
 def convert_attachments(attachments):
     return [{'file_id': attachment.file_name, 'tools': [{'type': tool.type} for tool in attachment.tools]} for attachment in attachments]
+
+def convert_annotations(annotations):
+    serialized_annotations = []
+    for annotation in annotations:
+        if isinstance(annotation, FileCitationAnnotation):
+            serialized_annotations.append({
+                'end_index': annotation.end_index,
+                'file_citation': {
+                    'file_id': annotation.file_citation.file_id,
+                    'quote': annotation.file_citation.quote
+                },
+                'start_index': annotation.start_index,
+                'text': annotation.text,
+                'type': annotation.type
+            })
+    return serialized_annotations
 
 def check_switch_agent(response: str, switch_flag: str):
     """
@@ -72,11 +89,11 @@ def wrap_message(message: str, agent_data, config: str='start'):
         return message
     
     if 'WrapperPrompt' not in agent_data:
-        logging.error(f'Could not find `WrapperPrompt` field in {agent_data}')
+        logging.error(f'Could not find `WrapperPrompt` field in {agent_data['Id'], agent_data['Name']}')
         return message
     wrapper = agent_data['WrapperPrompt']
     if wrapper is None or wrapper == '' or not wrapper:
-        logging.info(f'`WrapperPrompt` field is empty in {agent_data}')
+        logging.info(f'`WrapperPrompt` field is empty in {agent_data['Id'], agent_data['Name']}')
         return message
     if config == 'start':
         return f"""\nuser_message:\n{message}\n-----\ninstructions:\n{wrapper}\n"""
@@ -101,18 +118,18 @@ def include_init_message(message: str, agent_data, config: str='concat'):
         logging.error(f'`config` parameter must be either "concat" or "ignore"')
         return False, message
     if 'InitialPrompt' not in agent_data:
-        logging.error(f'Could not find `InitialPrompt` in {agent_data}')
+        logging.error(f'Could not find `InitialPrompt` in {agent_data['Id'], agent_data['Name']}')
         return False, message
     init = agent_data['InitialPrompt']
     if init is None or init == '' or not init:
-        logging.info(f'`InitialPrompt` field is empty in {agent_data}')
+        logging.info(f'`InitialPrompt` field is empty in {agent_data['Id'], agent_data['Name']}')
         return False, message
     if config == 'concat':
         return True, f"instructions:\n{init}\n-----\nuser_message:\n{message}"
     if config == 'ignore':
         return True, f"instructions:\n{init}"
     
-def strip_message(modified_message: str, flag: str) -> str:
+def strip_message(modified_message: str, flag: str=None) -> str:
     """
     Strips the modified message to return only the user message content.
 
@@ -159,7 +176,8 @@ def strip_message(modified_message: str, flag: str) -> str:
         return extract_user_message(user_message_part)
 
     # If no markers are found, return the original message
-    modified_message = modified_message.replace(flag, '')
+    # modified_message = modified_message.replace(flag, '')
+    modified_message = re.sub(r'【.*?†source】', '', modified_message)
     return modified_message.strip()
 
 def safely_delete_last_messages(thread_id: str, config: int=2):

@@ -1,11 +1,16 @@
 import json
 import logging
+import re
 import time
 from flask import jsonify
 from flask.helpers import make_response, stream_with_context
 from flask.wrappers import Response
 from openai._exceptions import APIError
-from openai.types.beta.assistant_stream_event import ThreadMessageDelta, ThreadRunRequiresAction, ThreadRunStepDelta
+from openai.types.beta.assistant_stream_event import ThreadMessageCompleted, ThreadMessageDelta, ThreadRunRequiresAction, ThreadRunStepCompleted, ThreadRunStepDelta
+from openai.types.beta.threads.runs.file_search_tool_call_delta import FileSearchToolCallDelta
+from openai.types.beta.threads.runs import FileSearchToolCall
+from openai.types.beta.threads.runs.function_tool_call_delta import FunctionToolCallDelta
+from openai.types.beta.threads.runs.tool_calls_step_details import ToolCallsStepDetails
 from openai.types.beta.threads.text_delta_block import TextDeltaBlock
 import openai
 from openai import BadRequestError, NotFoundError
@@ -27,7 +32,7 @@ if current_version < required_version:
 else:
   print("OpenAI version is compatible")
 
-@timeout(4)
+# @timeout(4)
 def chat_ta(assistant_id:str, thread_id:str, user_input:str, initial:bool=False, agent_id:str=None):
   """
   Sends a message to an OpenAI assistant and manages the conversation within a specific thread, counting the tokens used.
@@ -60,7 +65,7 @@ def chat_ta(assistant_id:str, thread_id:str, user_input:str, initial:bool=False,
       {'error': 'missing thread_id'}
   """
   # time.sleep(10)
-  
+  start = time.time()
   if not thread_id:
     print('Error: Missing thread_id')
     return {'error': 'missing thread_id'}
@@ -94,43 +99,73 @@ def chat_ta(assistant_id:str, thread_id:str, user_input:str, initial:bool=False,
                                       content=wrapper)
   
   stream = client.beta.threads.runs.create(thread_id=thread_id, timeout=55,
-                                        assistant_id=assistant_id, stream=True, additional_instructions='Do not use the function unless the user tells you to. Also do not create any additional functions.')
+                                        assistant_id=assistant_id, stream=True,)
   for event in stream:  
-    # print(event)
-    if isinstance(event, ThreadMessageDelta):
-      if isinstance(event.data.delta.content[0], TextDeltaBlock):
-        yield event.data.delta.content[0].text.value
-      sleep(0.05)
-    if isinstance(event, ThreadRunStepDelta):
-      if event.data.delta.step_details.tool_calls[0].function is not None and event.data.delta.step_details.tool_calls[0].function.name is not None:
-        yield json.dumps({'action': 'function_call', 'function_name': event.data.delta.step_details.tool_calls[0].function.name, 'status': 'in_progress'})
-        sleep(0.5)
-          
-    if isinstance(event, ThreadRunRequiresAction):
-      tool_calls = event.data.required_action.submit_tool_outputs.tool_calls
-      tool_outputs = []
-      for tool_call in tool_calls:
-        print(f'Calling {tool_call.function.name}')
-        if tool_call.function.name == 'point_to_agent':
-          result = switch_agent(agent_session=agent_session)
-          if isinstance(result, tuple):
-            result, cookies = result  
-            print(f'output: {result if result else 'Cannot switch agents!'}')
-            print(f'output cookies: {cookies}')
-            tool_outputs.append({'tool_call_id': tool_call.id, 'output': result})
-            if cookies:
-              yield json.dumps({'action': 'function_call', 'function_name': tool_call.function.name, 'status': 'completed'})
-              sleep(0.5)
-              yield cookies
+    try:
+      # print(event)
+      if isinstance(event, ThreadMessageDelta):
+        if isinstance(event.data.delta.content[0], TextDeltaBlock):
+          yield re.sub(r'【.*?†source】', '', event.data.delta.content[0].text.value)
+        sleep(0.05)
+      if isinstance(event, ThreadRunStepDelta):
+        if isinstance(event.data.delta.step_details.tool_calls[0], FunctionToolCallDelta):
+          if event.data.delta.step_details.tool_calls[0].function is not None and event.data.delta.step_details.tool_calls[0].function.name is not None:
+            yield json.dumps({'action': 'function_call', 'tool_name': event.data.delta.step_details.tool_calls[0].function.name, 'status': 'in_progress'})
+            sleep(0.5)
+        elif isinstance(event.data.delta.step_details.tool_calls[0], FileSearchToolCallDelta):
+          if event.data.delta.step_details.tool_calls[0].file_search is not None:
+            yield json.dumps({'action': 'file_search', 'status': 'in_progress'})
+            
+      # File ciations not wanted here.
+      # if isinstance(event, ThreadMessageCompleted):
+      #   message_content = event.data.content[0].text
+      #   annotations = message_content.annotations
+      #   citations = []
+      #   for index, annotation in enumerate(annotations):
+      #     message_content.validate = message_content.value.replace(annotation.text, f'[{index}]')
+      #     if file_citation := getattr(annotation, 'file_citation', None):
+      #       cited_file = client.files.retrieve(file_id=file_citation.file_id)
+      #       citations.append(f'[{index}] {cited_file.filename}')
+        
+      #   yield message_content.value ## Duplicate message
+      #   yield "\n".join(citations)
+            
+      if isinstance(event, ThreadRunStepCompleted):
+        if isinstance(event.data.step_details, ToolCallsStepDetails):
+          if isinstance(event.data.step_details.tool_calls[0], FileSearchToolCall):
+            yield json.dumps({'action': 'file_search', 'status': 'completed'})
+            
+      if isinstance(event, ThreadRunRequiresAction):
+        tool_calls = event.data.required_action.submit_tool_outputs.tool_calls
+        tool_outputs = []
+        for tool_call in tool_calls:
+          print(f'Calling {tool_call.function.name}')
+          if tool_call.function.name == 'point_to_agent':
+            result = switch_agent(agent_session=agent_session)
+            if isinstance(result, tuple):
+              result, cookies = result
+              print(f'output: {result if result else 'No initial prompt present.'}')
+              print(f'output cookies: {cookies}')
+              tool_outputs.append({'tool_call_id': tool_call.id, 'output': f'Successfully switched agents! {result}'})
+              if cookies:
+                yield json.dumps({'action': 'function_call', 'tool_name': tool_call.function.name, 'status': 'completed'})
+                sleep(0.5)
+                yield cookies
+            else:
+              tool_outputs.append({'tool_call_id': tool_call.id, 'output': result})
+              yield json.dumps({'action': 'function_call', 'tool_name': tool_call.function.name, 'status': 'failed'})
           else:
-            tool_outputs.append({'tool_call_id': tool_call.id, 'output': result})
-            yield json.dumps({'action': 'function_call', 'function_name': tool_call.function.name, 'status': 'failed'})
-        else:
-          tool_outputs.append({'tool_call_id': tool_call.id, 'output': 'Function does not exist.'})
-      with client.beta.threads.runs.submit_tool_outputs_stream(thread_id=thread_id, run_id=event.data.id, tool_outputs=tool_outputs) as stream_output:
-        for text in stream_output.text_deltas:
-          yield text
-          sleep(0.05)
+            tool_outputs.append({'tool_call_id': tool_call.id, 'output': 'Function does not exist.'})
+        with client.beta.threads.runs.submit_tool_outputs_stream(thread_id=thread_id, run_id=event.data.id, tool_outputs=tool_outputs) as stream_output:
+          for text in stream_output.text_deltas:
+            yield text
+            sleep(0.05)
+    except Exception as e:
+      logging.error(f'Encountered an error while executing the stream. {e}')
+      yield json.dumps({'error': 'Error in stream, continuing.', 'status_code': 1040})
+      continue
+  end = time.time()
+  logging.info(f'Stream execution took {end - start} seconds')
 
 def delete_agent(agent_id: str):
   """
@@ -195,8 +230,9 @@ def initialize_agent_chat(agent_id: str, thread_id: str, user_input: str):
     JSON response (dict): A message indicating successful initialization with a new thread ID and OAI agent ID including the response from the agent,
                           or an error message if the agent is not found.
   """
-  new_oai_agent_id, file_ids = create_agent(agent_id)
+  new_oai_agent_id, file_ids, vs_id = create_agent(agent_id)
 
+  start = time.time()
   if not new_oai_agent_id or new_oai_agent_id is None:
     return jsonify({'error': 'Agent not found'}), 404
   
@@ -229,8 +265,7 @@ def initialize_agent_chat(agent_id: str, thread_id: str, user_input: str):
   agent_ids.append(new_oai_agent_id)
   
   chat_serializer = chat_session_serializer
-  
-  session_data = chat_serializer.dumps({'agent_ids': agent_ids, 'thread_id': thread_id, 'file_ids': file_ids, 'chat_id': chat_id})
+  session_data = chat_serializer.dumps({'agent_ids': agent_ids, 'thread_id': thread_id, 'file_ids': file_ids, 'chat_id': chat_id, 'vector_store_id': vs_id})
   logging.info(f"CURRENT CHAT SESSION DATA: 'agent_ids': {agent_ids}, 'thread_id': {thread_id}, 'file_ids': {file_ids}")
   if isinstance(session_data, bytes):
     session_data = session_data.decode('utf-8')
@@ -263,6 +298,9 @@ def initialize_agent_chat(agent_id: str, thread_id: str, user_input: str):
                       secure=True,
                       samesite='none',
                       max_age=604800)
+  
+  end = time.time()
+  logging.info(f'Chat initialization took {end - start} seconds')
 
   return response
 
@@ -278,7 +316,7 @@ def batch_delete_agents(agent_ids: list[str]):
   if not agent_ids:
     return True, failed_agents
   
-  logging.info(f'Attempting to delete agents from OpenAI [{[agent_id for agent_id in agent_ids]}]')
+  logging.info(f'Attempting to delete agents from OpenAI {[agent_id for agent_id in agent_ids]}')
   
   valid_agent_ids = [agent_id for agent_id in agent_ids if agent_id]
   
@@ -288,10 +326,10 @@ def batch_delete_agents(agent_ids: list[str]):
     try:
       delete = client.beta.assistants.delete(agent_id)
       if not delete.deleted:
-        logging.info(msg=f'Failed to delete agent [{agent_id}]')
+        logging.info(msg=f'Failed to delete agent {agent_id}')
         failed_agents.append(agent_id)
       else:
-        logging.info(msg=f'Successfully deleted agent [{agent_id}]')
+        logging.info(msg=f'Successfully deleted agent {agent_id}')
     except NotFoundError as e:
       logging.error(f'Agent {agent_id} not found. {e}')
       continue
@@ -315,7 +353,7 @@ def batch_delete_files(file_ids: list[str]):
   if not file_ids:
     return True, failed_files
   
-  logging.info(f'Attempting to delete files from OpenAI [{[file for file in file_ids]}]')
+  logging.info(f'Attempting to delete files from OpenAI {[file for file in file_ids]}')
   
   valid_file_ids = [file_id for file_id in file_ids if file_id]
 
@@ -323,7 +361,7 @@ def batch_delete_files(file_ids: list[str]):
     try:
       delete = client.files.delete(file_id)
       if not delete.deleted:
-        logging.error(f'Failed to delete file [{file_id}]')
+        logging.error(f'Failed to delete file {file_id}')
         failed_files.append(file_id)
       else:
         logging.info(f'Deleted file {file_id}')
@@ -338,12 +376,70 @@ def batch_delete_files(file_ids: list[str]):
   else:
     return False, failed_files
   
+def batch_delete_vector_stores(vs_ids: list[str] | str):
+  """
+  Iteratively deletes vector stores from OpenAI.
+  
+  Parameters:
+  vs_ids (list[str] | str): List of vector store ids to delete or a single vector store ID to delete.
+  
+  Returns:
+    True or False and list: True if the deletion is fully successful and False if it fails. A list of non-deleted vector store ids is returned on fail.
+  """
+  failed = []
+  
+  if not vs_ids:
+    return True, failed
+  
+  if isinstance(vs_ids, str):
+    try:
+      delete = client.beta.vector_stores.delete(vs_ids)
+      if not delete.deleted:
+        logging.error(f'Failed to delete vector store {vs_ids}')
+        failed.append(vs_ids)
+      else:
+        logging.info(f'Deleted vector store {vs_ids}')
+    except NotFoundError as e:
+      logging.error(f'Vector store {vs_ids} not found. {e}')
+    except ValueError as e:
+      logging.error(f'Invalid vector store id {vs_ids}. {e}')
+      failed.append(vs_ids)
+    except Exception as e:
+      logging.error(f'Unexpected error deleting vector store {vs_ids}. {e}')
+      failed.append(vs_ids)
+ 
+  else: 
+    logging.info(f'Attempting to delete vectore stores from OpenAI {[vs for vs in vs_ids]}')
+    
+    valid_vs_ids = [vs_id for vs_id in vs_ids if vs_id]
+    
+    for vs_id in valid_vs_ids:
+      try:
+        delete = client.beta.vector_stores.delete(vs_id)
+        if not delete.deleted:
+          logging.error(f'Failed to delete vector store {vs_id}')
+          failed.append(vs_id)
+        else:
+          logging.info(f'Deleted vector store {vs_id}')
+      except NotFoundError as e:
+        logging.error(f'Vector store {vs_id} not found. {e}')
+      except ValueError as e:
+        logging.error(f'Invalid vector store id {vs_id}. {e}')
+        failed.append(vs_id)
+      except Exception as e:
+        logging.error(f'Unexpected error deleting vector store {vs_id}. {e}')
+        failed.append(vs_id)
+  
+  if not failed:
+    return True, failed
+  else:
+    return False, failed
+  
 def safely_end_chat_session():
   """
   Attempts to iteratively remove agents and files used during the chat session from OpenAI servers.
   The method retrieves the chat_session cookie and uses the agent_ids and file_ids to identify files for removal.
   The ChatSession in the database is updated to contain the last agent used by the chat session.
-  A summary and analytics are created if set in the module settings.
   
   Returns:
     dict[str, str | list], literal[200 | 400]: A message along with data and a status code indicating the success or failure of the method.
@@ -362,16 +458,22 @@ def safely_end_chat_session():
   files_status, files_deleted = batch_delete_files(file_ids)
   
   if not agents_status and not files_status:
-      logging.error(f'Failed to delete files: {files_deleted} and agents {agents_deleted}')
-      return {'error': 'Failed to delete all or some agents and files.', 'non_deleted_files': files_deleted, 'non_deleted_agents': agents_deleted}, 400
+    logging.error(f'Failed to delete files: {files_deleted} and agents {agents_deleted}')
+    return {'error': 'Failed to delete all or some agents and files.', 'non_deleted_files': files_deleted, 'non_deleted_agents': agents_deleted}, 400
   
   if not files_status:
-      logging.error(f'Failed to delete files: {files_deleted}')
-      return {'error': "Failed to delete all or some files", 'non_deleted_files': files_deleted}, 400
+    logging.error(f'Failed to delete files: {files_deleted}')
+    return {'error': "Failed to delete all or some files", 'non_deleted_files': files_deleted}, 400
   
   if not agents_status:
-      logging.error(f'Failed to delete agents: {agents_deleted}')
-      return {'error': "Failed to delete all or some agents", 'non_deleted_agents': agents_deleted}, 400
+    logging.error(f'Failed to delete agents: {agents_deleted}')
+    return {'error': "Failed to delete all or some agents", 'non_deleted_agents': agents_deleted}, 400
+    
+  if 'vector_store_id' in chat_session:
+    vs_status, vs_deleted = batch_delete_vector_stores(vs_ids=chat_session['vector_store_id'])
+    if not vs_status:
+      logging.error(f'Failed to delete vector stores: {vs_deleted}')
+      return {'error': "Failed to delete all or some vector stores", 'non_deleted_vector_stores': vs_deleted}, 400
   
   return {'message': 'Agents and files removed from OpenAI.'}, 200
 
@@ -390,7 +492,7 @@ def chat_util_agent(agent_id: str, thread_id: str, input: str, chat_session_id: 
   Returns:
     dict: A dictionary with either a 'success' key containing the assistant's response or an 'error' key with an error message.
   """
-  oai_agent_id, file_ids = create_agent(agent_id=agent_id)
+  oai_agent_id, file_ids, vs_id = create_agent(agent_id=agent_id)
   
   @stream_with_context
   def stream_response():

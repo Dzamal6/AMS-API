@@ -601,12 +601,9 @@ def update_user(user_id,
         if password is not None:
           user.password_hash = password
         if roles is not None:
-          print(roles)
           roles_uuids = [uuid.UUID(role_id) for role_id in roles]
-          print(roles_uuids)
           user.roles = session.query(Role).filter(
               Role.id.in_(roles_uuids)).all()
-          print(get_roles_as_dicts(user.roles))
         if modules is not None:
           modules_uuids = [
               uuid.UUID(module_id) for module_id in modules
@@ -626,13 +623,13 @@ def update_user(user_id,
             "Roles": get_roles_as_dicts(user.roles),
             "Modules": get_modules_as_dicts(user.modules)
         }
-
+        logging.info(f'Updated user {updated_user}')
         return updated_user
       else:
-        print(f"User with ID {user_id} not found")
+        logging.error(f"User with ID {user_id} not found")
         return None
   except Exception as e:
-    print(f"An error occurred: {e}")
+    logging.error(f"An error occurred: {e}")
     return None
 
 def upload_files(files, module_ids: list[str]=None):
@@ -1075,8 +1072,7 @@ def update_agent(agent_id, name, description, instructions, wrapper_prompt, init
       result.wrapper_prompt = wrapper_prompt
       result.initial_prompt = initial_prompt
       result.model = model
-      if agent_pointer is not None and agent_pointer != '' and agent_pointer != 'None':
-        result.agent_id_pointer = uuid.UUID(agent_pointer)
+      result.agent_id_pointer = uuid.UUID(agent_pointer) if agent_pointer else None
       session.commit()
       return {
         "Id": str(result.id),

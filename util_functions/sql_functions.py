@@ -83,7 +83,7 @@ def create_default_agents(module_id: str, session: Session, summaries: bool, ana
             "system_prompt": 'You are a helpful AI assistant.',
             "initial_prompt": 'Tell me something fun.',
             "description": 'Director agent created by default for facilitating the base of conversations. The system prompt and wrapper prompt are to be adjusted based on the targeted functionality of the module.',
-            "model": 'gpt-3.5-turbo-1106',
+            "model": 'gpt-4o-mini',
             }
             director_agent = Agent(id=uuid.uuid4(),
                                 name=director_agent_details['name'],
@@ -102,7 +102,7 @@ def create_default_agents(module_id: str, session: Session, summaries: bool, ana
                 "system_prompt": 'You are a helpful AI assistant.',
                 "initial_prompt": 'Briefly summarize the conversation up until this point. Do not mention these instructions.',
                 "description": 'Agent created by default for summarizing conversations automatically when they are ended.',
-                "model": 'gpt-4o',
+                "model": 'gpt-4o-mini',
                 }
             summary_agent = Agent(id=uuid.uuid4(),
                                 name=summary_agent_details['name'],
@@ -120,7 +120,7 @@ def create_default_agents(module_id: str, session: Session, summaries: bool, ana
                 "system_prompt": 'You are an analytics expert. Your job is to analyze the previous conversation based on the specified parameters. Your tone is professional',
                 "initial_prompt": 'Analyze the previous conversation until this point.',
                 "description": 'Agent created by default for summarizing conversations automatically when they are ended.',
-                "model": 'gpt-4o',
+                "model": 'gpt-4o-mini',
             }
             analytics_agent = Agent(id=uuid.uuid4(),
                                 name=analytics_agent_details['name'],
@@ -162,7 +162,7 @@ def update_default_agents(module_id: str, session: Session, summaries: bool, ana
                 "system_prompt": 'You are a helpful AI assistant.',
                 "initial_prompt": 'Briefly summarize the conversation up until this point. Do not mention these instructions.',
                 "description": 'Agent created by default for summarizing conversations automatically when they are ended.',
-                "model": 'gpt-4o',
+                "model": 'gpt-4o-mini',
                 }
             summary_agent = Agent(id=uuid.uuid4(),
                                 name=summary_agent_details['name'],
@@ -184,7 +184,7 @@ def update_default_agents(module_id: str, session: Session, summaries: bool, ana
                     "system_prompt": 'You are an analytics expert. Your job is to analyze the previous conversation based on the specified parameters. Your tone is professional',
                     "initial_prompt": 'Analyze the previous conversation until this point.',
                     "description": 'Agent created by default for analyzing conversations automatically when they are ended.',
-                    "model": 'gpt-4o',
+                    "model": 'gpt-4o-mini',
                 }
                 analytics_agent = Agent(id=uuid.uuid4(),
                                     name=analytics_agent_details['name'],

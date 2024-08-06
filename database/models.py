@@ -137,6 +137,7 @@ class Document(Base):
   url = Column(Text) 
   size = Column(Integer)
   fileType = Column(Text)
+  images = Column(Boolean, default=False)
   agents = relationship("Agent",
                         secondary='agent_file',
                         back_populates='documents')

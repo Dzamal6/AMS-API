@@ -1,6 +1,8 @@
+import logging
 from flask.blueprints import Blueprint
 from flask.json import jsonify
 from flask import request
+from openai._exceptions import NotFoundError
 from config import OPENAI_CLIENT as client, chat_session_serializer, agent_session_serializer
 
 from services.sql_service import delete_chat_session, retrieve_chat_sessions
@@ -57,7 +59,15 @@ def get_chat_dialog():
     thread_id = request.args.get('thread_id')
     if not thread_id:
         return jsonify({'error': 'Missing required fields.'}), 400
-    thread_messages = client.beta.threads.messages.list(thread_id=thread_id)
+    try:
+        thread_messages = client.beta.threads.messages.list(thread_id=thread_id)
+    except NotFoundError as e:
+        logging.error(f'{e}')
+        return jsonify({'error': 'Could not find dialog.'}), 404
+    except Exception as e:
+        logging.error(f'{e}')
+        return jsonify({'error': 'Failed to retrieve dialog.'}), 400
+    
     if thread_messages:
         messages_list = []
         for msg in thread_messages:

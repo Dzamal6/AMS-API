@@ -81,15 +81,20 @@ def update_chat_session():
         chat_id = chat_session['chat_id']
         thread_id = chat_session['thread_id']
         
+        if 'vector_store_id' in chat_session:
+            vector_store_id = chat_session['vector_store_id']
+                
         if 'file_ids' in chat_session and len(chat_session['file_ids']) > 0:
-            file_ids.append(chat_session['file_ids'])
+            chat_file_ids = chat_session['file_ids']
+            file_ids = chat_file_ids + file_ids
         agent_ids.append(oai_agent_id)
         
         chat_session_data = {
             'agent_ids': agent_ids,
             'chat_id': chat_id,
             'thread_id': thread_id,
-            'file_ids': file_ids
+            'file_ids': file_ids,
+            'vector_store_id': vector_store_id
         }
         
         chat_session_serialized = chat_session_serializer.dumps(chat_session_data)

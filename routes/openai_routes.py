@@ -1,5 +1,6 @@
 import json
 import logging
+import time
 from flask import Blueprint, jsonify, request, g, current_app, after_this_request
 from flask.helpers import make_response, stream_with_context
 from flask.wrappers import Response
@@ -84,6 +85,7 @@ def initialize_chat():
       404 Not Found: Agent with the specified ID not found.
       400 Bad Request: Failed to initialize agent or there was an error fetching its response.
   """
+  start = time.time()
   agent_id = request.json.get('agent_id')
   thread_id = request.json.get('thread_id')
   user_input = request.json.get('message')
@@ -105,7 +107,10 @@ def initialize_chat():
   else:
     logging.info(f'Using existing thread: {thread_id}')
     
-  return initialize_agent_chat(agent_id=agent_id, thread_id=thread_id, user_input=user_input)
+  init = initialize_agent_chat(agent_id=agent_id, thread_id=thread_id, user_input=user_input)
+  end = time.time()
+  logging.info(f'Complete chat initialization took {end - start} seconds')
+  return init
 
 
 @openai_bp.route('/openai/delete_agent', methods=['POST'])
@@ -165,6 +170,7 @@ def openai_chat():
       200 OK: Chat response received successfully.
       400 Bad Request: Invalid request payload or an error occurred.
   """
+  start = time.time()
   user_input = request.json.get('message')
 
   if not user_input:
@@ -198,9 +204,12 @@ def openai_chat():
     except Exception as e:
       logging.error(f'Error occurred while processing chat message: {e}')
       yield json.dumps({'error': f'An error occurred while communicating with the agent. {e}', 'status_code': 400})
+    finally:
+      end = time.time()
+      logging.info(f'Interaction took {end - start} seconds')
         
   response = Response(stream_response(), content_type='text/plain', status=200)
-    
+  
   return response
 
 @openai_bp.route('/openai/get_models', methods=['GET'])
@@ -254,19 +263,63 @@ def check_thread_session():
   if chat_session and 'agent_ids' in chat_session and 'thread_id' in chat_session:
     agent_id = chat_session['agent_ids'][len(chat_session['agent_ids']) - 1]
     thread_id = chat_session['thread_id']
-    thread_messages = client.beta.threads.messages.list(thread_id)
+    try:
+      thread_messages = client.beta.threads.messages.list(thread_id)
+    except NotFoundError as e:
+      logging.error(f'No thread found with id {thread_id}')
+      res_data, status_code = safely_end_chat_session()
+      if status_code != 200:
+        res_data.update({'message': f'No thread found with id {thread_id}'})
+        return jsonify(res_data), status_code
+      response = make_response(jsonify({'error': f'No thread found with id {thread_id}'}), 404)
+      response.set_cookie('chat_session',
+                        '',
+                        max_age=0,
+                        secure=True,
+                        httponly=True,
+                        samesite='none',)
+      response.set_cookie('agent_session',
+                '',
+                max_age=0,
+                secure=True,
+                httponly=True,
+                samesite='none',
+                )
+      return response
+    except Exception as e:
+      logging.error(f'Failed to fetch thread messages for thread {thread_id}')
+      # res_data, status_code = safely_end_chat_session()
+      # if status_code != 200:
+      #   res_data.update({'message': f'Failed to fetch thread messages: {e}'})
+      #   return jsonify(res_data), status_code
+      response = make_response(jsonify({'error': f'Failed to fetch thread messages: {e}'}), 400)
+      # response.set_cookie('chat_session',
+      #                   '',
+      #                   max_age=0,
+      #                   secure=True,
+      #                   httponly=True,
+      #                   samesite='none',)
+      # response.set_cookie('agent_session',
+      #           '',
+      #           max_age=0,
+      #           secure=True,
+      #           httponly=True,
+      #           samesite='none',
+      #           )
+      return response
 
     if thread_messages:
         messages_list = []
         for msg in thread_messages:
-            message_dict = {
-                'Id': msg.id,
-                'Created': msg.created_at,
-                'Role': msg.role,
-                'Content': convert_content(msg.content),
-                'Attachments': convert_attachments(msg.attachments)
-            }
-            messages_list.append(message_dict)
+          print(f'message: {msg}')
+          message_dict = {
+              'Id': msg.id,
+              'Created': msg.created_at,
+              'Role': msg.role,
+              'Content': convert_content(msg.content),
+              'Attachments': convert_attachments(msg.attachments)
+          }
+          messages_list.append(message_dict)
           
         messages_list.reverse()
 
