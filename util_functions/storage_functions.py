@@ -7,6 +7,7 @@ from werkzeug.datastructures import FileStorage
 import uuid
 import zipfile
 
+from services.sql_service import upload_files_metadata
 from services.storage_service import upload_file
 from util_functions.functions import get_module_session
 
@@ -115,3 +116,41 @@ def upload_images_to_supabase(file_storages: list[FileStorage]):
             continue
     
     return uploaded_images
+
+def upload_files_and_parse_images(bucket_name: str, file_storages: list[FileStorage], folder: str, module_id: str):
+  """
+  Uploads non-existent files to the Supabase storage and saves the metadata to the database.
+  The method attempts to parse images from the uploaded files. If images are found, they are saved to the 'images' bucket, saving each image's
+  metadata as well.
+  
+  Parameters:  
+  - bucket_name (str): The name of the bucket.
+  - file_storage (FileStorage): The file to be uploaded.
+  - folder (str): The name of the folder to store the file in.
+  - module_id (str): The ID of the module the file belongs to.
+  
+  Returns:
+  uploaded_data, file_ids: A list of dictionaries containing the metadata of the uploaded files and the file ids.
+  """
+  #use one session
+  file_ids = [str]
+  uploaded_files = []
+  if file_storages:
+    sb_uploaded_files = []
+    for file in file_storages:
+      response = upload_file(bucket_name='documents', file_storage=file, folder='uploads', module_id=module_id)
+      img_responses = parseImagesFromFile(file_storage=file)
+      sb_uploaded_files.append(response)
+    uploaded_files = upload_files_metadata(sb_uploaded_files, module_id)
+    if uploaded_files:
+      for file in uploaded_files:
+        if 'Id' in file:
+          file_ids.append(file['Id'])
+    
+    for img in img_responses:
+      if 'error' in img:
+        logging.error(f'Failed to upload parsed image {img}')
+        continue
+      logging.info(f'Uploaded parsed image {img}')
+      
+  return uploaded_files, file_ids

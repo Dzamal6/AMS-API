@@ -6,8 +6,6 @@ from database.models import Agent, Module, User, Role, Document
 import uuid
 import hashlib
 
-from util_functions.functions import current_time_prague
-
 
 def get_roles_as_dicts(roles):
   """
@@ -210,3 +208,4 @@ def get_module(module_id: uuid.UUID, session) -> Module:
 def get_user_name(user_id: uuid.UUID, session) -> str:
     query = session.query(User).filter(User.id == user_id).first()
     return query.username if query.username else query.email
+

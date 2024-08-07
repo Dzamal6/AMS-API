@@ -1,10 +1,14 @@
-import os
-from itsdangerous import URLSafeSerializer
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
-from openai import OpenAI
-from dotenv import load_dotenv
-from supabase import create_client, Client
+   
+try:
+    import os
+    from itsdangerous import URLSafeSerializer
+    from flask_limiter import Limiter
+    from flask_limiter.util import get_remote_address
+    from openai import OpenAI
+    from dotenv import load_dotenv
+    from supabase import create_client, Client
+except ModuleNotFoundError as e:
+    print(f"Error importing module(s): {e}")
 
 load_dotenv()
 

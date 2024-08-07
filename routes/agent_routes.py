@@ -3,8 +3,8 @@ from flask import Blueprint, request, jsonify
 from config import OPENAI_CLIENT as client
 from services.sql_service import get_agent_data, get_director_agent_info, upload_agent_metadata, retrieve_all_agents, delete_agent, update_agent, upload_files_metadata
 from services.storage_service import delete_files, upload_file
-from util_functions.functions import get_module_session, upload_files_and_parse_images
-from util_functions.storage_functions import parseImagesFromFile
+from util_functions.functions import get_module_session
+from util_functions.storage_functions import parseImagesFromFile, upload_files_and_parse_images
 
 
 agent_bp = Blueprint('agent', __name__)
