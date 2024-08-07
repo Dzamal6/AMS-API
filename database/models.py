@@ -157,8 +157,8 @@ class Extracted_Img(Base):
        id = Column(UUID(as_uuid=True), primary_key=True, index=True)
        url = Column(Text)
        file_id = Column(UUID(as_uuid=True),
-                    ForeignKey('documents.id', ondelete='CASCADE'),
-                    nullable=True)
+                     ForeignKey('documents.id', ondelete='CASCADE'),
+                     nullable=True)
        file = relationship('Document', back_populates='extracted_images')
 
 
