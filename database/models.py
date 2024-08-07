@@ -138,6 +138,8 @@ class Document(Base):
   size = Column(Integer)
   fileType = Column(Text)
   images = Column(Boolean, default=False)
+  content_hash = Column(String(64), unique=True)
+  extracted_images = relationship('Extracted_Img', back_populates='Document', cascade='all, delete-orphan')
   agents = relationship("Agent",
                         secondary='agent_file',
                         back_populates='documents')
@@ -148,6 +150,17 @@ class Document(Base):
                          onupdate=current_time_prague())
 event.listen(Document, 'before_insert', set_created)
 event.listen(Document, 'before_update', set_last_modified)
+
+
+class Extracted_Img(Base):
+       __tablename__ = 'extracted_images'
+       id = Column(UUID(as_uuid=True), primary_key=True, index=True)
+       url = Column(Text)
+       file_id = Column(UUID(as_uuid=True),
+                    ForeignKey('documents.id', ondelete='CASCADE'),
+                    nullable=True)
+       file = relationship('Document', back_populates='extracted_images')
+
 
 # POINTS TO (next agent) --> works only if flow control is AI
 class Agent(Base):

@@ -11,6 +11,8 @@ from services.storage_service import delete_files, serve_file, upload_file
 from util_functions.functions import roles_required, get_module_session
 import mammoth
 
+from util_functions.storage_functions import parseImagesFromFile
+
 document_bp = Blueprint('documents', __name__)
 
 @document_bp.route('/documents', methods=['POST'])
@@ -37,6 +39,8 @@ def upload_documents():
   """
   module_session = get_module_session()
 
+# TODO: CHECK EXISTS (HASH)
+# TODO: ASSOCIATE FILES WITH IMAGE FILES (INTRODUCE FILE_ID TO EXTRACTED_IMAGES table IN DB)
   if module_session is None or not module_session:
     return jsonify({'error': 'Invalid module session.'}), 401
   
@@ -47,9 +51,17 @@ def upload_documents():
     return jsonify({'error': 'No file(s) provided'}), 400
   
   responses = []
+  img_responses = []
   for file in files:
       response = upload_file(bucket_name='documents', file_storage=file, folder='uploads', module_id=module_id)
+      img_responses = parseImagesFromFile(file_storage=file)
       responses.append(response)
+      
+  for img in img_responses:
+    if 'error' in img:
+      logging.error(f'Failed to upload parsed image {img}')
+      continue
+    logging.info(f'Uploaded parsed image {img}')
     
   if any('error' in response for response in responses):
     upload_files_metadata(files=responses, module_id=module_id)

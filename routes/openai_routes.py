@@ -311,7 +311,7 @@ def check_thread_session():
     if thread_messages:
         messages_list = []
         for msg in thread_messages:
-          print(f'message: {msg}')
+          # print(f'message: {msg}')
           message_dict = {
               'Id': msg.id,
               'Created': msg.created_at,

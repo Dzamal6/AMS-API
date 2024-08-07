@@ -1,8 +1,10 @@
+import logging
 from flask import Blueprint, request, jsonify
 from config import OPENAI_CLIENT as client
 from services.sql_service import get_agent_data, get_director_agent_info, upload_agent_metadata, retrieve_all_agents, delete_agent, update_agent, upload_files_metadata
 from services.storage_service import delete_files, upload_file
-from util_functions.functions import get_module_session
+from util_functions.functions import get_module_session, upload_files_and_parse_images
+from util_functions.storage_functions import parseImagesFromFile
 
 
 agent_bp = Blueprint('agent', __name__)
@@ -37,7 +39,7 @@ def create_agent():
   """
   name = request.form.get('name')
   files = request.files.getlist('file')
-  # file_ids = request.form.getlist('file_ids')
+  file_ids = request.form.getlist('file_ids')
   description = request.form.get('description')
   instructions = request.form.get('instructions')
   wrapper_prompt = request.form.get('wrapper_prompt')
@@ -52,19 +54,8 @@ def create_agent():
     return jsonify({'error': 'Missing required fields.'}), 400
     
   module_id = str(module_session['Id'])
-  file_ids = []
-  uploaded_files = []
-  
-  if files:
-    sb_uploaded_files = []
-    for file in files:
-      response = upload_file(bucket_name='documents', file_storage=file, folder='uploads', module_id=module_id)
-      sb_uploaded_files.append(response)
-    uploaded_files = upload_files_metadata(sb_uploaded_files, module_id)
-    if uploaded_files:
-      for file in uploaded_files:
-        if 'Id' in file:
-          file_ids.append(file['Id'])
+  uploaded_files, new_file_ids = upload_files_and_parse_images(bucket_name='documents', file_storage=files, folder='uploads', module_id=module_id)
+  file_ids = file_ids + new_file_ids
     
   agent_details = {
     "name": name,
@@ -216,6 +207,7 @@ def update_agent_route():
     file_ids = []
     
   uploaded_files = []
+  img_responses = []
 
 # this and delete. Then implement choosing from existing files when adding new agents.
 # Also implement checks for existing and ignore files that exist, just link them to agents.
@@ -223,6 +215,7 @@ def update_agent_route():
     sb_uploaded_files = []
     for file in files:
       response = upload_file(bucket_name='documents', file_storage=file, folder='uploads', module_id=module_id)
+      img_responses = parseImagesFromFile(file_storage=file)
       sb_uploaded_files.append(response)
     uploaded_files = upload_files_metadata(sb_uploaded_files, module_id)
     if uploaded_files:
@@ -230,6 +223,12 @@ def update_agent_route():
         if 'Id' in file:
           file_ids.append(file['Id'])
       print(f'Updating agent with files: {[f"{file_id}" for file_id in file_ids]}')
+    
+    for img in img_responses:
+      if 'error' in img:
+        logging.error(f'Failed to upload parsed image {img}')
+        continue
+      logging.info(f'Uploaded parsed image {img}')
     
   update = update_agent(agent_id, name, description, instructions, wrapper_prompt, initial_prompt, agent_pointer, model, file_ids)
 

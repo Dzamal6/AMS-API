@@ -1292,7 +1292,7 @@ def retrieve_chat_sessions(user_id: str):
         return module_summaries
 
 # MODULE NAME SHOULD BE UPDATED HERE WHEN UPDATING THE MODULE. CURRENT APPROACH WON'T SOLVE IF THE MODULE IS DELETED --> WHEN MODULE IS DELETED, THE
-# NAME THAT THE CHAT SESSION HAD PRIOR TO THE MODULE UPDATE WILL BE DISPLAYED.
+# NAME THAT THE CHAT SESSION HAD PRIOR TO THE MODULE UPDATE WILL BE DISPLAYED. at least that's what i think
       return [{
         "Id": str(chat_session.id),
         'UserName': chat_session.user.email,
